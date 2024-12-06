@@ -1,8 +1,9 @@
-'''
+"""
 Simple util implementation for video conference
 Including data capture, image compression and image overlap
 Note that you can use your own implementation as well :)
-'''
+"""
+
 from io import BytesIO
 import pyaudio
 import cv2
@@ -15,8 +16,12 @@ from config import *
 # audio setting
 FORMAT = pyaudio.paInt16
 audio = pyaudio.PyAudio()
-streamin = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-streamout = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+streamin = audio.open(
+    format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+)
+streamout = audio.open(
+    format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK
+)
 
 # print warning if no available camera
 cap = cv2.VideoCapture(0)
@@ -26,6 +31,54 @@ if cap.isOpened():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
 else:
     can_capture_camera = False
+
+
+def capture_screen():
+    # capture screen with the resolution of display
+    # img = pyautogui.screenshot()
+    img = ImageGrab.grab()
+    return img
+
+
+def capture_camera():
+    # capture frame of camera
+    ret, frame = cap.read()
+    if not ret:
+        raise Exception("Fail to capture frame from camera")
+    return Image.fromarray(frame)
+
+
+def capture_voice():
+    return streamin.read(CHUNK)
+
+
+def compress_image(image, format="JPEG", quality=85):
+    """
+    compress image and output Bytes
+
+    :param image: PIL.Image, input image
+    :param format: str, output format ('JPEG', 'PNG', 'WEBP', ...)
+    :param quality: int, compress quality (0-100), 85 default
+    :return: bytes, compressed image data
+    """
+    img_byte_arr = BytesIO()
+    image.save(img_byte_arr, format=format, quality=quality)
+    img_byte_arr = img_byte_arr.getvalue()
+
+    return img_byte_arr
+
+
+def decompress_image(image_bytes):
+    """
+    decompress bytes to PIL.Image
+    :param image_bytes: bytes, compressed data
+    :return: PIL.Image
+    """
+    img_byte_arr = BytesIO(image_bytes)
+    image = Image.open(img_byte_arr)
+
+    return image
+
 
 my_screen_size = pyautogui.size()
 
@@ -58,7 +111,7 @@ def overlay_camera_images(screen_image, camera_images):
     camera_images: list[PIL.Image]
     """
     if screen_image is None and camera_images is None:
-        print('[Warn]: cannot display when screen and camera are both None')
+        print("[Warn]: cannot display when screen and camera are both None")
         return None
     if screen_image is not None:
         screen_image = resize_image_to_fit_screen(screen_image, my_screen_size)
@@ -68,7 +121,9 @@ def overlay_camera_images(screen_image, camera_images):
         if not all(img.size == camera_images[0].size for img in camera_images):
             raise ValueError("All camera images must have the same size")
 
-        screen_width, screen_height = my_screen_size if screen_image is None else screen_image.size
+        screen_width, screen_height = (
+            my_screen_size if screen_image is None else screen_image.size
+        )
         camera_width, camera_height = camera_images[0].size
 
         # calculate num_cameras_per_row
@@ -77,15 +132,23 @@ def overlay_camera_images(screen_image, camera_images):
         # adjust camera_imgs
         if len(camera_images) > num_cameras_per_row:
             adjusted_camera_width = screen_width // len(camera_images)
-            adjusted_camera_height = (adjusted_camera_width * camera_height) // camera_width
-            camera_images = [img.resize((adjusted_camera_width, adjusted_camera_height), Image.LANCZOS) for img in
-                             camera_images]
+            adjusted_camera_height = (
+                adjusted_camera_width * camera_height
+            ) // camera_width
+            camera_images = [
+                img.resize(
+                    (adjusted_camera_width, adjusted_camera_height), Image.LANCZOS
+                )
+                for img in camera_images
+            ]
             camera_width, camera_height = adjusted_camera_width, adjusted_camera_height
             num_cameras_per_row = len(camera_images)
 
         # if no screen_img, create a container
         if screen_image is None:
-            display_image = Image.fromarray(np.zeros((camera_width, my_screen_size[1], 3), dtype=np.uint8))
+            display_image = Image.fromarray(
+                np.zeros((camera_width, my_screen_size[1], 3), dtype=np.uint8)
+            )
         else:
             display_image = screen_image
         # cover screen_img using camera_images
@@ -99,50 +162,3 @@ def overlay_camera_images(screen_image, camera_images):
         return display_image
     else:
         return screen_image
-
-
-def capture_screen():
-    # capture screen with the resolution of display
-    # img = pyautogui.screenshot()
-    img = ImageGrab.grab()
-    return img
-
-
-def capture_camera():
-    # capture frame of camera
-    ret, frame = cap.read()
-    if not ret:
-        raise Exception('Fail to capture frame from camera')
-    return Image.fromarray(frame)
-
-
-def capture_voice():
-    return streamin.read(CHUNK)
-
-
-def compress_image(image, format='JPEG', quality=85):
-    """
-    compress image and output Bytes
-
-    :param image: PIL.Image, input image
-    :param format: str, output format ('JPEG', 'PNG', 'WEBP', ...)
-    :param quality: int, compress quality (0-100), 85 default
-    :return: bytes, compressed image data
-    """
-    img_byte_arr = BytesIO()
-    image.save(img_byte_arr, format=format, quality=quality)
-    img_byte_arr = img_byte_arr.getvalue()
-
-    return img_byte_arr
-
-
-def decompress_image(image_bytes):
-    """
-    decompress bytes to PIL.Image
-    :param image_bytes: bytes, compressed data
-    :return: PIL.Image
-    """
-    img_byte_arr = BytesIO(image_bytes)
-    image = Image.open(img_byte_arr)
-
-    return image
