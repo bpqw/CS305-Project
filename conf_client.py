@@ -1,304 +1,203 @@
-import asyncio
-import datetime
-import time
-from util import *
+# from util import *
+from socket import *
 
+from pyexpat.errors import messages
+
+from config import *
 
 class ConferenceClient:
-    def __init__(
-        self,
-    ):
+    def __init__(self,):
         # sync client
         self.is_working = True
-        self.server_addr = SERVER_IP  # server addr
-        self.server_port = MAIN_SERVER_PORT  # server port
-        self.client_id = None  # client id
+        self.server_addr = (SERVER_IP,MAIN_SERVER_PORT)  # server addr ，在config.py里设置服务器IP
         self.on_meeting = False  # status
-        self.conns = (
-            None  # you may need to maintain multiple conns for a single conference
-        )
+        self.conns = None  # you may need to maintain multiple conns for a single conference
         self.support_data_types = []  # for some types of data
         self.share_data = {}
-
-        self.conference_info = (
-            None  # you may need to save and update some conference_info regularly
-        )
-
+        self.conference_info = None  # you may need to save and update some conference_info regularly
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
-
-        self.message_queue = asyncio.Queue()
-        self.camera_on = False
-
-    def start_conference(self):
-        """
-        init conns when create or join a conference with necessary conference_info
-        and
-        start necessary running task for conference
-        """
-
-    def close_conference(self):
-        """
-        close all conns to servers or other clients and cancel the running tasks
-        pay attention to the exception handling
-        """
-
+        self.conference_id = 0
+        self.user_id = 0 #用于在服务器中确定用户，由服务器从1开始分配
+        self.conference_socket = None
+        #与Main Server建立TCP连接
+        self.client_socket = socket(AF_INET, SOCK_STREAM) #创建基于网络（ipv4)的TCP套接字
+        self.client_socket.connect(self.server_addr) #用该套接字与服务器地址连接
+        self.user_id = self.client_socket.recv(1024).decode()
+        self.is_owner = False
+        print(f'You are user {self.user_id}')
+        # self.client_socket.send("connect successfully".encode())
+        # print(self.client_socket.recv(1024).decode())
     def create_conference(self):
         """
         create a conference: send create-conference request to server and obtain necessary data to
         """
+        #可能需要加一个if条件（是否要求Free状态才能创建）
+        self.client_socket.send('create'.encode())#发送请求
+        data = self.client_socket.recv(1024).decode()#得到编号，端口号为50000+data
+        print(f'Your conference id is {data}')
+        self.conference_id = data
+        self.conference_socket = socket(AF_INET,SOCK_STREAM)#与会议服务器建立TCP
+        port = 50000+int(data)
+        self.conference_socket.connect((SERVER_IP,port))
+        self.conference_socket.send(str(self.user_id).encode())#向会议室发送自己的编号
+        self.is_owner = True # 是房间的创建者，用于判断有没有cancel的权力
+        self.on_meeting = True
+
         pass
 
     def join_conference(self, conference_id):
         """
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
+        data_send = 'join'+' '+ conference_id
+        self.client_socket.send(data_send.encode())
+        data = self.client_socket.recv(1024).decode()
+        if data == 'True':
+            self.conference_id = conference_id
+            self.conference_socket = socket(AF_INET, SOCK_STREAM)  # 与会议服务器建立TCP
+            port = 50000 + int(conference_id)
+            self.conference_socket.connect((SERVER_IP, port))
+            self.conference_socket.send(str(self.user_id).encode())
+            self.on_meeting = True
+            print(f'Join conference {conference_id} successfully')
+        else:
+            print(f"There is no conference {conference_id}")
         pass
 
     def quit_conference(self):
         """
         quit your on-going conference
         """
+        self.client_socket.send('quit'.encode())#告知主服务器要退出
+        # self.client_socket.send(str(self.conference_id).encode())
+        self.conference_socket.send('quit'.encode())
+        self.conference_socket.send(str(self.conference_id).encode())
+        self.conference_socket.close()
+        self.conference_id = 0
+        self.on_meeting = False
+        print('quit')
         pass
 
     def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
+        self.client_socket.send('cancel'.encode())
+        self.client_socket.send(str(self.conference_id).encode())# 发送会议编号给主服务器，使其释放端口
+        self.conference_socket.send('cancel'.encode())
+        self.is_owner = False
+        try:
+            data = self.conference_socket.recv(1024)
+            message = data.decode()
+            print(message)
+        except Exception:
+            print('Error')
         pass
 
-    async def keep_share(
-        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
-    ):
-        """
-        Capture and send data based on the data type (video, audio).
-        """
-        if data_type == "video":
-            while True:
-                frame = capture_function()
-                if frame is None:
-                    break
+    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
+        '''
+        running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
+        you can create different functions for sharing various kinds of data
+        '''
+        pass
 
-                if compress:
-                    frame = compress(frame)
-
-                send_conn.write(f"camera{frame}".encode("utf-8"))
-
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
-
-        elif data_type == "audio":
-            while True:
-                audio_data = capture_function()
-                if audio_data is None:
-                    break
-                send_conn.write(f"audio{audio_data}".encode("utf-8"))
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
-
-        elif data_type == "screen":
-            while True:
-                screen_data = capture_function()
-                if screen_data is None:
-                    break
-
-                if compress:
-                    screen_data = compress(f"screen{screen_data}".encode("utf-8"))
-
-                send_conn.write(screen_data)
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
-
-        else:
-            print(f"[Error]: Unsupported data type {data_type}")
-
-    async def share_switch(self, data_type):
-        """
+    def share_switch(self, data_type):
+        '''
         switch for sharing certain type of data (screen, camera, audio, etc.)
-        """
-        if data_type == "video":
-            if not self.camera_on:
-                self.camera_on = True
-                await self.keep_share(
-                    "video",
-                    self.send_conn,
-                    capture_camera,
-                    compress_image,
-                    fps_or_frequency=30,
-                )
+        '''
+        pass
 
-        elif data_type == "audio":
-            await self.keep_share(
-                "audio", self.send_conn, capture_voice, fps_or_frequency=30
-            )
-        elif data_type == "screen":
-            await self.keep_share(
-                "screen", self.send_conn, capture_screen, fps_or_frequency=30
-            )
-        else:
-            print("[Error]: Unsupported data type")
-
-    async def keep_recv(self, recv_conn, data_type, decompress=None):
-        """
-        Keep receiving data (video, audio, screen) from the server and process/display it accordingly.
-        """
-        while True:
-            data = await recv_conn.read(1024)
-            if not data:
-                break
-
-            if decompress:
-                data = decompress(data)
-
-            if data_type == "video":
-                frame = np.frombuffer(data, dtype=np.uint8)
-                frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-                if frame is not None:
-                    cv2.imshow("Received Video", frame)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
-            elif data_type == "audio":
-                streamout.write(data)
-            else:
-                print(f"[Error]: Unsupported data type {data_type}")
+    def keep_recv(self, recv_conn, data_type, decompress=None):
+        '''
+        running task: keep receiving certain type of data (save or output)
+        you can create other functions for receiving various kinds of data
+        '''
 
     def output_data(self):
-        """
+        '''
         running task: output received stream data
+        '''
+
+    def start_conference(self):
+        '''
+        init conns when create or join a conference with necessary conference_info
+        and
+        start necessary running task for conference
+        '''
+
+    def close_conference(self):
+        '''
+        close all conns to servers or other clients and cancel the running tasks
+        pay attention to the exception handling
+        '''
+
+    def list_conference(self):
+        self.client_socket.send('list'.encode())
+        stop = False
+        while not stop:
+            conference = self.client_socket.recv(1024).decode()
+            if conference.endswith("stop"):
+                stop = True
+                conference = conference.replace("stop", '')
+            print(conference,end='')
+
+    def start(self):
         """
-        pass
-
-    def stop_camera(self):
+        execute functions based on the command line input
         """
-        Stop the camera capture and release the resources.
-        """
-        if cap is not None:
-            cap.release()
-            cap = None
-            print("[INFO]: Camera turned off.")
-            self.camera_on = False
-
-    async def send_message(self, message):
-        """Send a message to the server."""
-        if not self.writer:
-            print("[Error]: Not connected to server!")
-            return
-
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        message_with_metadata = f"[{self.client_id} | {timestamp}] {message}"
-
-        self.writer.write(message_with_metadata.encode())
-        await self.writer.drain()
-
-    async def receive_message(self):
-        """Receive messages from the server."""
-        if not self.reader:
-            print("[Error]: Not connected to server!")
-            return
-
-        while True:
-            data = await self.reader.read(1024)
-            if data:
-                # print(f"[DEBUG]: Received from server: {data.decode()}")
-                await self.message_queue.put(data.decode())
-
-                # Extract the client ID from the welcome message
-                if "Your client ID is" in data.decode():
-                    self.client_id = (
-                        data.decode().split("Your client ID is ")[1].strip()
-                    )
-                    print(f"[INFO]: Client ID set to {self.client_id}")
-            else:
-                print("[Error]: No response from server.")
-                break
-
-    async def connect_to_server(self):
-        """Connect to the server using asyncio."""
-        try:
-            self.reader, self.writer = await asyncio.open_connection(
-                self.server_addr, self.server_port
-            )
-            self.send_conn = self.writer
-            print(f"Connected to server at {self.server_addr}:{self.server_port}")
-            await self.writer.drain()
-        except Exception as e:
-            print(f"Failed to connect to server: {e}")
-            return False
-        return True
-
-    async def start(self):
-        """
-        Execute functions based on the command line input.
-        """
-        connected = await self.connect_to_server()
-        if not connected:
-            return
-
-        asyncio.create_task(self.receive_message())
-
         while True:
             if not self.on_meeting:
-                status = "Free"
+                status = 'Free'
             else:
-                status = f"OnMeeting-{self.client_id}"
-
+                status = f'OnMeeting-{self.conference_id}'
             recognized = True
-            cmd_input = (
-                input(f'({status}) Please enter a operation (enter "?" to help): ')
-                .strip()
-                .lower()
-            )
+            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
             fields = cmd_input.split(maxsplit=1)
-
             if len(fields) == 1:
-                if cmd_input in ("?", "？"):
+                if cmd_input in ('?', '？'):
                     print(HELP)
-                elif cmd_input == "create":
-                    self.create_conference()
-                elif cmd_input == "quit":
-                    self.quit_conference()
-                elif cmd_input == "cancel":
-                    self.cancel_conference()
+                elif cmd_input == 'create':
+                    if not self.on_meeting:
+                        self.create_conference()
+                    else : print('You are in a conference')
+                elif cmd_input == 'quit':
+                    if self.on_meeting:
+                        self.quit_conference()
+                    else: print('You are not in any conference')
+                elif cmd_input == 'cancel':
+                    if self.is_owner:
+                        self.cancel_conference()
+                    else: print("You cannot cancel the conference")
+                elif cmd_input == 'list':
+                    self.list_conference()
+                elif cmd_input == 'ping':#测试连接
+                    self.conference_socket.send('ping'.encode())
                 else:
                     recognized = False
             elif len(fields) == 2:
-                if fields[0] == "join":
-                    input_conf_id = fields[1]
-                    if input_conf_id.isdigit():
-                        self.join_conference(input_conf_id)
+                if fields[0] == 'join':
+                    if self.on_meeting:
+                        print('You are in a conference')
                     else:
-                        print("[Warn]: Input conference ID must be in numeric form")
-                elif fields[0] == "send":
-                    message = fields[1]
-                    await self.send_message(message)
-                elif fields[0] == "camera":
-                    if fields[1] == "on":
-                        await self.share_switch("video")
-                    elif fields[1] == "off":
-                        self.stop_camera()
-                elif fields[0] == "audio":
-                    if fields[1] == "on":
-                        await self.share_switch("audio")
-                    elif fields[1] == "off":
-                        self.stop_camera()
-                elif fields[0] == "screen":
-                    if fields[1] == "on":
-                        await self.share_switch("screen")
-                    elif fields[1] == "off":
-                        self.stop_camera()
+                        input_conf_id = fields[1]
+                        if input_conf_id.isdigit():
+                            self.join_conference(input_conf_id)
+                        else:
+                            print('[Warn]: Input conference ID must be in digital form')
+                elif fields[0] == 'switch':
+                    data_type = fields[1]
+                    if data_type in self.share_data.keys():
+                        self.share_switch(data_type)
                 else:
                     recognized = False
             else:
                 recognized = False
 
             if not recognized:
-                print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
-
-            if not self.message_queue.empty():
-                msg = await self.message_queue.get()
-            await asyncio.sleep(0.1)
+                print(f'[Warn]: Unrecognized cmd_input {cmd_input}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     client1 = ConferenceClient()
-    asyncio.run(client1.start())
+    client1.start()
+
