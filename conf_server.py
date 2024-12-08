@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 from util import *
 
 
@@ -179,8 +178,8 @@ class MainServer:
 
             message = data.decode("utf-8")
             print(f"Received message from client {client_id}: {message}")
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            message_with_metadata = f"[{client_id} | {timestamp}] {message}"
+            # timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # message_with_metadata = f"[{client_id} | {timestamp}] {message}"
 
             if (
                 message.startswith("camera")
@@ -190,7 +189,7 @@ class MainServer:
                 data_type = message.split()[0]
                 await self.handle_data(reader, writer, data_type)
             else:
-                await self.broadcast_message(message_with_metadata, writer)
+                await self.broadcast_message(message, writer)
 
 
 if __name__ == "__main__":

@@ -199,7 +199,7 @@ class ConferenceClient:
         while True:
             data = await self.reader.read(1024)
             if data:
-                # print(f"[DEBUG]: Received from server: {data.decode()}")
+                print(f"[DEBUG]: Received from server: {data.decode()}")
                 await self.message_queue.put(data.decode())
 
                 # Extract the client ID from the welcome message
