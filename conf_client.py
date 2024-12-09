@@ -46,26 +46,22 @@ class ConferenceClient:
         return True
         pass
 
-    def join_conference(self, conference_id):
+    async def join_conference(self, conference_id):
         """
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
-        data_send = 'join'+' '+ conference_id
-        self.client_socket.send(data_send.encode())
-        data = self.client_socket.recv(1024).decode()
-        if data == 'True':
-            self.conference_id = conference_id
-            self.conference_socket = socket(AF_INET, SOCK_STREAM)  # 与会议服务器建立TCP
-            port = 50000 + int(conference_id)
-            self.conference_socket.connect((SERVER_IP, port))
-            self.conference_socket.send(str(self.user_id).encode())
+        conference_port = int(conference_id) + 50000
+        try:
+            self.meet_reader, self.meet_writer = await asyncio.open_connection(self.server_addr[0], conference_port)
+            print(f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}")
             self.on_meeting = True
-            print(f'Join conference {conference_id} successfully')
-        else:
-            print(f"There is no conference {conference_id}")
+        except Exception as e:
+            print(f"Failed to connect to conference {conference_id}: {e}")
+            return False
+        return True
         pass
 
-    def quit_conference(self):
+    async def quit_conference(self):
         """
         quit your on-going conference
         """
@@ -79,7 +75,7 @@ class ConferenceClient:
         print('quit')
         pass
 
-    def cancel_conference(self):
+    async def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
@@ -150,20 +146,38 @@ class ConferenceClient:
         while True:
             data = await asyncio.wait_for(self.reader.read(1024), None)
             if data:
-                print(f"[DEBUG]: Received from server: {data.decode()}")
+                # print(f"[DEBUG]: Received from server: {data.decode()}")
                 await self.message_queue.put(data.decode())
                 # Extract the client ID from the welcome message
                 if "Your client ID is" in data.decode():
+                    #连接到主服务器
                     self.client_id = (
                         data.decode().split("Your client ID is ")[1].strip()
                     )
                     print(f"[INFO]: Client ID set to {self.client_id}")
                 elif "Your conference ID is" in data.decode():
+                    #create
                     self.conference_id = (
                         data.decode().split("Your conference ID is ")[1].strip()
                     )
                     print(f"[INFO]: Create Conference {self.client_id}")
                     await self.create_conference(self.conference_id)
+                elif "Successfully join conference " in data.decode():
+                    #join
+                    self.conference_id = (
+                        data.decode().split('Successfully join conference ')[1].strip()
+                    )
+                    print(f"[INFO]: Join Conference {self.client_id}")
+                    await self.join_conference(self.conference_id)
+                elif 'There is no conference ' in data.decode():
+                    #join fail
+                    print('Please choose another conference')
+                elif 'List: ' in data.decode():
+                    conference = (
+                        data.decode().split('List: ')[1].strip()
+                    )
+                    await self.list_conference(conference)
+                else: print('Message error')
             else:
                 print("[Error]: No response from server.")
                 break
@@ -182,9 +196,9 @@ class ConferenceClient:
         self.writer.write(message_with_metadata.encode())
         await self.writer.drain()
 
-    def list_conference(self):
+    async def list_conference(self,conference):
         """list all the conferences"""
-        self.send_message('list')
+        print(conference)
         # stop = False
         # while not stop:
             # conference = self.client_socket.recv(1024).decode()
@@ -234,19 +248,17 @@ class ConferenceClient:
                     else:
                         print("You cannot cancel the conference")
                 elif cmd_input == 'list':
-                    self.list_conference()
-                elif cmd_input == 'ping':  # 测试连接
-                    self.conference_socket.send('ping'.encode())
+                    await self.send_message('list')
                 else:
                     recognized = False
             elif len(fields) == 2:
                 if fields[0] == 'join':
                     if self.on_meeting:
-                        print('You are in a conference')
+                        print('You are already in a conference')
                     else:
                         input_conf_id = fields[1]
                         if input_conf_id.isdigit():
-                            self.join_conference(input_conf_id)
+                            await self.send_message(f'join {input_conf_id}')
                         else:
                             print('[Warn]: Input conference ID must be in digital form')
                 elif fields[0] == 'switch':
@@ -269,8 +281,6 @@ class ConferenceClient:
         connected = await self.connect_to_server()
         if not connected:
             return
-        # asyncio.create_task(self.receive_message())
-        # asyncio.create_task(self.receive_command())
         await asyncio.gather(self.receive_message(),self.receive_command())
 
 

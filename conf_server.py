@@ -45,7 +45,6 @@ class ConferenceServer:
                 if message == 'quit':
                     print('quit')
                     return
-                elif message == 'ping': print('ok')
                 elif message == 'cancel':
                     if user_id == self.owner_id:
                         await self.cancel_conference()
@@ -115,8 +114,8 @@ class MainServer:
         """
         conference_id = int(conference_id)
         if conference_id in self.conference_servers:
-            writer.write('True'.encode())
-        else : writer.write('False'.encode())
+            writer.write(f'Successfully join conference {conference_id}'.encode())
+        else : writer.write(f'There is no conference {conference_id}'.encode())
 
 
     async def handle_quit_conference(self,reader):
@@ -139,12 +138,12 @@ class MainServer:
             print(f'Fail to cancel because {e}')
         pass
 
-    async def list_conference(self,writer):
+    async def handle_list_conference(self,writer):
+        a = 'List: '
         for i in self.conference_servers:
-            a = 'conference' + ' ' + str(i) + '\n'
-            writer.write(a.encode())
-        # await asyncio.sleep(0.01)#防止stop和会议同时被接受，造成误读
-        writer.write('stop'.encode())
+            a += 'conference ' + str(i) + '\n'
+        writer.write(a.encode())
+        await writer.drain()
         pass
 
     async def handle_client(self, reader, writer):
@@ -164,31 +163,31 @@ class MainServer:
             if not data:
                 print(f'disconnected with {addr}')
                 self.clients.pop(client_id)
-                # writer.close()
-                # await writer.wait_closed()
+                writer.close()
+                await writer.wait_closed()
                 return
+            if not writer:
+                print('writer error')
             whole_message = data.decode()
+            print(whole_message)
             command = whole_message.split('] ')[1]
             field = command.split()
             if len(field) == 1:
                 if command == 'create':
-                    print('create')
-                    # asyncio.create_task(self.handle_create_conference(writer))
                     await self.handle_create_conference(writer)
-                    print('ok')
                 elif command == 'quit':
-                    asyncio.create_task(self.handle_quit_conference(reader))
+                    await self.handle_quit_conference(reader)
                 elif command == 'cancel':
-                    asyncio.create_task(self.handle_cancel_conference(reader,writer))
+                    await self.handle_cancel_conference(reader, writer)
                 elif command == 'list':
-                    asyncio.create_task(self.list_conference(writer))
+                    await self.handle_list_conference(writer)
                 else:
                     writer.write('wrong command'.encode())
             elif len(field) == 2:
                 if field[0] == 'join':
-                    asyncio.create_task(self.handle_join_conference(field[1],writer))
+                    await self.handle_join_conference(field[1],writer)
                 elif field[0] == 'switch':
-                    asyncio.create_task(self.handle_join_conference(field[1],writer))
+                    await self.handle_join_conference(field[1],writer)
                 else:
                     writer.write('wrong command'.encode())
             else: print('error')
