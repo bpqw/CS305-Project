@@ -5,6 +5,9 @@ import struct
 import json
 import cv2
 import numpy as np
+import aioconsole
+from socket import *
+from config import *
 
 
 class ConferenceClient:
@@ -31,6 +34,12 @@ class ConferenceClient:
 
         self.message_queue = asyncio.Queue()
         self.camera_on = False
+        self.conference_id = 0
+        self.is_owner = False
+        self.reader = None  # 对Main Server的接收端
+        self.writer = None  # 对Main Server的发送端
+        self.meet_reader = None
+        self.meet_writer = None
 
     def start_conference(self):
         """
@@ -45,29 +54,78 @@ class ConferenceClient:
         pay attention to the exception handling
         """
 
-    def create_conference(self):
+    async def create_conference(self, conference_id):
         """
         create a conference: send create-conference request to server and obtain necessary data to
         """
-        pass
+        conference_port = int(conference_id) + 50000
+        try:
+            self.meet_reader, self.meet_writer = await asyncio.open_connection(
+                self.server_addr[0], conference_port
+            )
+            print(
+                f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}"
+            )
+            self.is_owner = True  # 是房间的创建者，用于判断有没有cancel的权力
+            self.on_meeting = True
+            # await self.writer.drain()
+        except Exception as e:
+            print(f"Failed to connect to conference {conference_id}: {e}")
+            return False
+        return True
 
-    def join_conference(self, conference_id):
+    async def join_conference(self, conference_id):
         """
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
+        conference_port = int(conference_id) + 50000
+        try:
+            self.meet_reader, self.meet_writer = await asyncio.open_connection(
+                self.server_addr[0], conference_port
+            )
+            print(
+                f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}"
+            )
+            self.on_meeting = True
+        except Exception as e:
+            print(f"Failed to connect to conference {conference_id}: {e}")
+            return False
+        return True
         pass
 
-    def quit_conference(self):
+    async def quit_conference(self):
         """
         quit your on-going conference
         """
-        pass
+        self.client_socket.send("quit".encode())  # 告知主服务器要退出
+        # self.client_socket.send(str(self.conference_id).encode())
+        self.conference_socket.send("quit".encode())
+        self.conference_socket.send(str(self.conference_id).encode())
+        self.conference_socket.close()
+        self.conference_id = 0
+        self.on_meeting = False
+        print("quit")
 
     def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
-        pass
+        self.client_socket.send("cancel".encode())
+        self.client_socket.send(
+            str(self.conference_id).encode()
+        )  # 发送会议编号给主服务器，使其释放端口
+        self.conference_socket.send("cancel".encode())
+        self.is_owner = False
+        try:
+            data = self.conference_socket.recv(1024)
+            message = data.decode()
+            print(message)
+        except Exception:
+            print("Error")
+
+    async def list_conference(self, conference):
+        """list all the conferences"""
+        print(conference)
 
     async def share_switch(self, data_type):
         """
@@ -265,6 +323,8 @@ class ConferenceClient:
                             ].strip()
                             print(f"[INFO]: Client ID set to {self.client_id}")
 
+                        ###### As well as conference details etc. ######
+
                     except json.JSONDecodeError:
                         print("[Error]: Failed to decode JSON message.")
                     except Exception as e:
@@ -403,48 +463,53 @@ class ConferenceClient:
             return False
         return True
 
-    async def start(self):
-        """
-        Execute functions based on the command line input.
-        """
-        connected = await self.connect_to_server()
-        if not connected:
-            return
-
-        asyncio.create_task(self.keep_recv(self.reader))
-
+    async def receive_command(self):
         while True:
+            await asyncio.sleep(0.3)
             if not self.on_meeting:
                 status = "Free"
             else:
-                status = f"OnMeeting-{self.client_id}"
-
+                status = f"OnMeeting-{self.conference_id}"
             recognized = True
-            cmd_input = (
-                input(f'({status}) Please enter a operation (enter "?" to help): ')
-                .strip()
-                .lower()
+            cmd_input = await aioconsole.ainput(
+                f'({status}) Please enter a operation (enter "?" to help): '
             )
+            cmd_input = cmd_input.strip().lower()
             fields = cmd_input.split(maxsplit=1)
-
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
                     print(HELP)
                 elif cmd_input == "create":
-                    self.create_conference()
+                    if not self.on_meeting:
+                        # await self.send_message("create")
+                        pass
+                    else:
+                        print("You are in a conference")
                 elif cmd_input == "quit":
-                    self.quit_conference()
+                    if self.on_meeting:
+                        self.quit_conference()
+                    else:
+                        print("You are not in any conference")
                 elif cmd_input == "cancel":
-                    self.cancel_conference()
+                    if self.is_owner:
+                        self.cancel_conference()
+                    else:
+                        print("You cannot cancel the conference")
+                elif cmd_input == "list":
+                    # await self.send_message("list")
+                    pass
                 else:
                     recognized = False
             elif len(fields) == 2:
                 if fields[0] == "join":
-                    input_conf_id = fields[1]
-                    if input_conf_id.isdigit():
-                        self.join_conference(input_conf_id)
+                    if self.on_meeting:
+                        print("You are already in a conference")
                     else:
-                        print("[Warn]: Input conference ID must be in numeric form")
+                        input_conf_id = fields[1]
+                        if input_conf_id.isdigit():
+                            await self.send_message(f"join {input_conf_id}")
+                        else:
+                            print("[Warn]: Input conference ID must be in digital form")
                 elif fields[0] == "send":
                     message = fields[1]
                     await self.send_message(message)
@@ -474,7 +539,17 @@ class ConferenceClient:
 
             if not self.message_queue.empty():
                 await self.message_queue.get()
-            await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
+
+    async def start(self):
+        """
+        Execute functions based on the command line input.
+        """
+        connected = await self.connect_to_server()
+        if not connected:
+            return
+
+        await asyncio.gather(self.keep_recv(self.reader), self.receive_command())
 
 
 if __name__ == "__main__":
