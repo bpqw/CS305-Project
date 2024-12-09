@@ -1,4 +1,7 @@
 import asyncio
+from datetime import datetime
+import json
+import struct
 from util import *
 
 
@@ -89,58 +92,81 @@ class MainServer:
         """
         pass
 
-    async def handle_data(self, reader, writer, data_type):
+    async def handle_data(self, reader, writer, data_type, client_id):
         """
-        Receive sharing stream data from a client and decide how to forward them to the rest of the clients.
+        Continuously receive data from a client and broadcast it to others.
         """
         try:
             while True:
-                data = await reader.read(1024)
-                if not data:
-                    break
+                if data_type == "T":
+                    length_data = await reader.readexactly(4)
+                    message_length = struct.unpack(">I", length_data)[0]
 
-                if data_type == "video":
+                    message_data = await reader.readexactly(message_length)
+                    message = message_data.decode("utf-8")
+                    print(f"Received text from client {client_id}: {message}")
+
+                    message_dict = {
+                        "client_id": client_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "message": message,
+                    }
+
+                    await self.broadcast("T", message_dict, writer, is_text=True)
+
+                elif data_type in ("V", "A", "S"):
+                    length_data = await reader.readexactly(4)
+                    data_length = struct.unpack(">I", length_data)[0]
+
+                    data = await reader.readexactly(data_length)
                     print(
-                        f"Received video data from {writer.get_extra_info('peername')}"
+                        f"Received {data_type} data of length {data_length} from client {client_id}."
                     )
-                    await self.broadcast_data(data, writer)
-                elif data_type == "audio":
-                    print(
-                        f"Received audio data from {writer.get_extra_info('peername')}"
-                    )
-                    await self.broadcast_data(data, writer)
-                elif data_type == "screen":
-                    print(
-                        f"Received screen data from {writer.get_extra_info('peername')}"
-                    )
-                    await self.broadcast_data(data, writer)
+
+                    await self.broadcast(data_type, data, writer, is_text=False)
+
                 else:
-                    print("[Error]: Unsupported data type")
+                    print(f"Unsupported data type: {data_type}")
                     break
+        except asyncio.IncompleteReadError:
+            print(f"Client {client_id} disconnected during data transmission.")
         except Exception as e:
-            print(f"Error handling {data_type} data: {e}")
+            print(f"Error handling data from client {client_id}: {e}")
 
-    async def broadcast_data(self, data, sender_writer):
+    async def broadcast(self, data_type, payload, sender_writer, is_text=False):
         """
-        Broadcast data to all clients except the sender.
+        Broadcast either text or binary data to all clients including the sender.
+        'payload' is either a string (for text) or bytes (for binary data).
+        'is_text' indicates whether payload should be treated as text (JSON) or raw bytes.
         """
         for reader, writer in self.clients:
-            if writer != sender_writer:
-                try:
-                    writer.write(data)
+            try:
+                if is_text:
+                    await self.send_framed_message(writer, data_type, payload)
+                else:
+                    length = struct.pack(">I", len(payload))  # 4 bytes
+                    writer.write(data_type.encode("utf-8") + length + payload)
                     await writer.drain()
-                except Exception as e:
-                    print(f"Error broadcasting data: {e}")
+                print(f"Broadcasted {data_type} data to a client. ")
+            except Exception as e:
+                print(f"Error broadcasting {data_type} data: {e}")
 
-    async def broadcast_message(self, message, sender_writer):
-        """Send a message to all connected clients."""
-        for reader, writer in self.clients:
-            if writer != sender_writer:
-                try:
-                    writer.write(f"Broadcast: {message}".encode("utf-8"))
-                    await writer.drain()
-                except Exception as e:
-                    print(f"Error broadcasting message: {e}")
+    async def send_framed_message(self, writer, data_type, message_dict):
+        """
+        Send a framed JSON message to a client.
+        """
+        try:
+            json_message = json.dumps(message_dict)
+            json_message_bytes = json_message.encode("utf-8")
+
+            data_type_byte = data_type.encode("utf-8")  # 1 byte
+            length = struct.pack(">I", len(json_message_bytes))  # 4 bytes
+
+            writer.write(data_type_byte + length + json_message_bytes)
+            await writer.drain()
+            print(f"Sent {data_type} message to client.")
+        except Exception as e:
+            print(f"Error sending message: {e}")
 
     async def start(self):
         """
@@ -157,7 +183,6 @@ class MainServer:
             await server.serve_forever()
 
     async def handle_client(self, reader, writer):
-        """Handle incoming client requests."""
         client_id = self.client_counter
         self.client_counter += 1
         addr = writer.get_extra_info("peername")
@@ -165,31 +190,32 @@ class MainServer:
 
         self.clients.append((reader, writer))
 
-        writer.write(
-            f"Welcome to the conference server! Your client ID is {client_id} ".encode()
-        )
-        await writer.drain()
+        message_dict = {
+            "client_id": 0,
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Welcome to the conference server! Your client ID is {client_id}",
+        }
+
+        await self.send_framed_message(writer, "T", message_dict)
 
         while True:
-            data = await reader.read(1024)
-            if not data:
+            try:
+                type_data = await reader.readexactly(1)
+                data_type = type_data.decode("utf-8")
+                print(f"Received data type: {data_type} from client {client_id}")
+
+                await self.handle_data(reader, writer, data_type, client_id)
+            except asyncio.IncompleteReadError:
                 print(f"Client {client_id} disconnected.")
                 break
+            except Exception as e:
+                print(f"Error with client {client_id}: {e}")
+                break
 
-            message = data.decode("utf-8")
-            print(f"Received message from client {client_id}: {message}")
-            # timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # message_with_metadata = f"[{client_id} | {timestamp}] {message}"
-
-            if (
-                message.startswith("camera")
-                or message.startswith("audio")
-                or message.startswith("screen")
-            ):
-                data_type = message.split()[0]
-                await self.handle_data(reader, writer, data_type)
-            else:
-                await self.broadcast_message(message, writer)
+        self.clients.remove((reader, writer))
+        writer.close()
+        await writer.wait_closed()
+        print(f"Connection with client {client_id} closed.")
 
 
 if __name__ == "__main__":
