@@ -11,6 +11,7 @@ class MeetingAPI:
     @staticmethod
     def get_meeting_list():
         # 从服务器获取会议列表
+
         return ["会议1", "会议2", "会议3","新建会议"]
 
         # 模拟从服务器获取会议列表
@@ -152,6 +153,15 @@ class MeetingRoom1(QWidget):
         self.end_meeting_btn.clicked.connect(self.onEndMeeting)
         bottom_layout.addWidget(self.end_meeting_btn)
 
+        # 输入框
+        self.input_edit = QLineEdit()
+        bottom_layout.addWidget(self.input_edit)
+
+        # 发送按钮
+        self.send_btn = QPushButton('发送')
+        self.send_btn.clicked.connect(self.Input)  # 点击时调用Input方法
+        bottom_layout.addWidget(self.send_btn)
+
         # 将底部控制栏添加到主布局
         main_layout.addLayout(bottom_layout)
 
@@ -196,6 +206,13 @@ class MeetingRoom1(QWidget):
     def appendText(self, text):
         # 将接收到的信息添加到文本框中
         self.info_text_edit.append(text)
+
+    # 处理输入的内容
+    def Input(self):
+        input_text = self.input_edit.text()
+        if input_text:  # 空文本不做处理
+            self.appendText(input_text)  # 将输入的内容添加到文本框----------此行功能仅用于证明输入的文本有效
+            self.input_edit.clear()  # 清空输入框
 
 #会议室（加入者版本）：只能退出会议
 class MeetingRoom2(QWidget):
@@ -243,10 +260,19 @@ class MeetingRoom2(QWidget):
         self.cam_btn.clicked.connect(self.onCamClick)
         bottom_layout.addWidget(self.cam_btn)
 
-        # 结束会议按钮
+        # 退出会议按钮
         self.end_meeting_btn = QPushButton('退出会议')
         self.end_meeting_btn.clicked.connect(self.onEndMeeting)
         bottom_layout.addWidget(self.end_meeting_btn)
+
+        # 输入框
+        self.input_edit = QLineEdit()
+        bottom_layout.addWidget(self.input_edit)
+
+        # 发送按钮
+        self.send_btn = QPushButton('发送')
+        self.send_btn.clicked.connect(self.Input)  # 点击时调用Input方法
+        bottom_layout.addWidget(self.send_btn)
 
         # 将底部控制栏添加到主布局
         main_layout.addLayout(bottom_layout)
@@ -292,6 +318,13 @@ class MeetingRoom2(QWidget):
     def appendText(self, text):
         # 预留方法，用于将接收到的信息添加到文本框中
         self.info_text_edit.append(text)
+
+    # 处理输入的内容
+    def Input(self):
+        input_text = self.input_edit.text()
+        if input_text:  # 检查输入框是否为空
+            self.appendText(input_text)  # 将输入的内容添加到文本框
+            self.input_edit.clear()  # 清空输入框
 
 # 加入会议列表界面(选择后进入加入者版会议室）
 class JoinMeetingList(QWidget):
