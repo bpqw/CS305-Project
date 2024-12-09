@@ -1,6 +1,4 @@
 import asyncio
-from os import write
-
 # from util import *
 from config import *
 
@@ -75,11 +73,6 @@ class ConferenceServer:
             except Exception as e:
                 print(f"Error closing connection for user {user_id}: {e}")
         self.conf.close()
-
-
-
-
-
     async def start(self):
         '''
         start the ConferenceServer and necessary running tasks to handle clients in this conference
@@ -96,23 +89,25 @@ class MainServer:
         self.server_port = main_port
         self.main_server = None
         self.conference_conns = None
-        self.conference_servers:dict[int,ConferenceServer] = {}  # self.conference_servers[conference_id] = ConferenceServer
-        self.users = {}#按连接顺序分配用户id user1， user2 ...
+        self.conference_servers = {}  # self.conference_servers[conference_id] = ConferenceServer
+        self.conference_counter = 1
+        self.clients = {} #用字典存方便移除
+        self.clients_counter = 1
 
     async def handle_create_conference(self,writer):
         """
         create conference: create and start the corresponding ConferenceServer, and reply necessary info to client
         """
-        i = 1
-        while i in self.conference_servers:#从1开始，查询未使用的编号
-            i += 1
         new_conference_server = ConferenceServer()#新建会议
-        self.conference_servers[i] = new_conference_server#更新会议列表
-        new_conference_server.conference_id = i
-        new_conference_server.conf_serve_ports = 50000+i
-        id = str(i)
-        writer.write(id.encode())#将会议编号发回给创建者，使之与会议建立连接
-        await asyncio.create_task(new_conference_server.start())#初始化会议，使之开始监听客户端加入申请，实现多个用户同时可以创建会议
+        new_conference_server.conference_id = self.conference_counter
+        self.conference_servers[new_conference_server.conference_id] = new_conference_server#更新会议列表
+
+        new_conference_server.conf_serve_ports = 50000+self.conference_counter
+        conference_id = f"Your conference ID is {self.conference_counter}"
+        self.conference_counter += 1
+        writer.write(conference_id.encode())  # 将会议编号发回给创建者，使之与会议建立连接
+        asyncio.create_task(new_conference_server.start())#初始化会议，使之开始监听客户端加入申请，实现多个用户同时可以加入会议
+
 
     async def handle_join_conference(self, conference_id,writer):
         """
@@ -152,35 +147,40 @@ class MainServer:
         writer.write('stop'.encode())
         pass
 
-    async def request_handler(self, reader, writer):
+    async def handle_client(self, reader, writer):
         """
         running task: handle out-meeting (or also in-meeting) requests from clients
         """
+        client_id = self.clients_counter
+        self.clients_counter += 1
         addr = writer.get_extra_info('peername')
-        i = 1
-        while i in self.users:
-            i += 1
-        self.users[i] = addr
-        writer.write(str(i).encode())#发送用户编号
-        print(f"connect with user{i}({addr}) ")
+        self.clients[client_id] = (reader,writer)
+        message = f"Your client ID is {client_id}"
+        writer.write(message.encode())#发送用户编号
+        await writer.drain()
+        print(f"connect with user{client_id}{addr} ")
         while True:
             data = await asyncio.wait_for(reader.read(1024),None)
             if not data:
                 print(f'disconnected with {addr}')
-                self.users.pop(i)
+                self.clients.pop(client_id)
                 # writer.close()
                 # await writer.wait_closed()
                 return
-            message = data.decode()
-            field = message.split()
+            whole_message = data.decode()
+            command = whole_message.split('] ')[1]
+            field = command.split()
             if len(field) == 1:
-                if message == 'create':
-                    asyncio.create_task(self.handle_create_conference(writer))
-                elif message == 'quit':
+                if command == 'create':
+                    print('create')
+                    # asyncio.create_task(self.handle_create_conference(writer))
+                    await self.handle_create_conference(writer)
+                    print('ok')
+                elif command == 'quit':
                     asyncio.create_task(self.handle_quit_conference(reader))
-                elif message == 'cancel':
+                elif command == 'cancel':
                     asyncio.create_task(self.handle_cancel_conference(reader,writer))
-                elif message == 'list':
+                elif command == 'list':
                     asyncio.create_task(self.list_conference(writer))
                 else:
                     writer.write('wrong command'.encode())
@@ -191,17 +191,18 @@ class MainServer:
                     asyncio.create_task(self.handle_join_conference(field[1],writer))
                 else:
                     writer.write('wrong command'.encode())
+            else: print('error')
         pass
 
     async def start(self):
         """
         start MainServer
         """
-        server = await asyncio.start_server(self.request_handler, SERVER_IP, MAIN_SERVER_PORT)#创建并行服务器
-        addr = server.sockets[0].getsockname()
+        self.server = await asyncio.start_server(self.handle_client, SERVER_IP, MAIN_SERVER_PORT)#创建并行服务器
+        addr = self.server.sockets[0].getsockname()
         print(f"Server started, listening {addr}")
-        async with server:
-            await server.serve_forever()#实现多个客户端同时操作
+        async with self.server:
+            await self.server.serve_forever()#实现多个客户端同时操作
         pass
 
 
