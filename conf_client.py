@@ -1,12 +1,12 @@
 import asyncio
-from datetime import datetime
+import datetime
+
 from util import *
 import struct
 import json
 import cv2
 import numpy as np
 import aioconsole
-from socket import *
 from config import *
 
 
@@ -16,8 +16,7 @@ class ConferenceClient:
     ):
         # sync client
         self.is_working = True
-        self.server_addr = SERVER_IP  # server addr
-        self.server_port = MAIN_SERVER_PORT  # server port
+        self.server_addr = (SERVER_IP,MAIN_SERVER_PORT)
         self.client_id = None  # client id
         self.on_meeting = False  # status
         self.conns = (
@@ -25,28 +24,27 @@ class ConferenceClient:
         )
         self.support_data_types = []  # for some types of data
         self.share_data = {}
-
         self.conference_info = (
             None  # you may need to save and update some conference_info regularly
         )
-
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
-
         self.message_queue = asyncio.Queue()
         self.camera_on = False
         self.conference_id = 0
         self.is_owner = False
         self.reader = None  # 对Main Server的接收端
         self.writer = None  # 对Main Server的发送端
-        self.meet_reader = None
-        self.meet_writer = None
+        self.meet_reader = None #对会议室的接收端
+        self.meet_writer = None #对会议室的发送端
 
-    def start_conference(self):
+    async def start_conference(self):
         """
         init conns when create or join a conference with necessary conference_info
         and
         start necessary running task for conference
         """
+
+
 
     def close_conference(self):
         """
@@ -58,17 +56,19 @@ class ConferenceClient:
         """
         create a conference: send create-conference request to server and obtain necessary data to
         """
-        conference_port = int(conference_id) + 50000
+        conference_port = int(conference_id) + 50000 #服务器按50000+会议编号分配端口
         try:
-            self.meet_reader, self.meet_writer = await asyncio.open_connection(
-                self.server_addr[0], conference_port
-            )
+            self.meet_reader, self.meet_writer = await asyncio.open_connection(self.server_addr[0], conference_port)
             print(
                 f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}"
             )
             self.is_owner = True  # 是房间的创建者，用于判断有没有cancel的权力
             self.on_meeting = True
-            # await self.writer.drain()
+            self.meet_writer.write(str(self.client_id).encode())
+            try:
+                asyncio.create_task(self.keep_recv_meet(self.meet_reader))
+            except Exception as e:
+                print(f'Errors when starting keep_recv_meet: {e}')
         except Exception as e:
             print(f"Failed to connect to conference {conference_id}: {e}")
             return False
@@ -83,10 +83,15 @@ class ConferenceClient:
             self.meet_reader, self.meet_writer = await asyncio.open_connection(
                 self.server_addr[0], conference_port
             )
+            self.on_meeting = True
+            self.meet_writer.write(str(self.client_id).encode())
             print(
                 f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}"
             )
-            self.on_meeting = True
+            try:
+                asyncio.create_task(self.keep_recv_meet(self.meet_reader))
+            except Exception as e:
+                print(f'error when keep recv')
         except Exception as e:
             print(f"Failed to connect to conference {conference_id}: {e}")
             return False
@@ -97,31 +102,13 @@ class ConferenceClient:
         """
         quit your on-going conference
         """
-        self.client_socket.send("quit".encode())  # 告知主服务器要退出
-        # self.client_socket.send(str(self.conference_id).encode())
-        self.conference_socket.send("quit".encode())
-        self.conference_socket.send(str(self.conference_id).encode())
-        self.conference_socket.close()
-        self.conference_id = 0
-        self.on_meeting = False
-        print("quit")
+
 
     def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
-        self.client_socket.send("cancel".encode())
-        self.client_socket.send(
-            str(self.conference_id).encode()
-        )  # 发送会议编号给主服务器，使其释放端口
-        self.conference_socket.send("cancel".encode())
-        self.is_owner = False
-        try:
-            data = self.conference_socket.recv(1024)
-            message = data.decode()
-            print(message)
-        except Exception:
-            print("Error")
+
 
     async def list_conference(self, conference):
         """list all the conferences"""
@@ -136,7 +123,7 @@ class ConferenceClient:
                 self.camera_on = True
                 await self.keep_share(
                     "video",
-                    self.send_conn,
+                    self.meet_writer,
                     capture_camera,
                     compress_image,
                     fps_or_frequency=30,
@@ -144,12 +131,12 @@ class ConferenceClient:
 
         elif data_type == "audio":
             await self.keep_share(
-                "audio", self.send_conn, capture_voice, fps_or_frequency=30
+                "audio", self.meet_writer, capture_voice, fps_or_frequency=30
             )
         elif data_type == "screen":
             await self.keep_share(
                 "screen",
-                self.send_conn,
+                self.meet_writer,
                 capture_screen,
                 compress_image,
                 fps_or_frequency=30,
@@ -263,10 +250,55 @@ class ConferenceClient:
 
         else:
             print(f"[Error]: Unsupported data type {data_type}")
+    async def keep_recv_main(self):
+        """Receive messages from the server."""
+        if not self.reader:
+            print("[Error]: Not connected to server!")
+            return
+        while True:
+            data = await asyncio.wait_for(self.reader.read(1024), None)
+            if data:
+                print(f"[DEBUG]: Received from server: {data.decode()}")
+                await self.message_queue.put(data.decode())
+                # Extract the client ID from the welcome message
+                if "Your client ID is" in data.decode():
+                    # 连接到主服务器
+                    self.client_id = (
+                        data.decode().split("Your client ID is ")[1].strip()
+                    )
+                    print(f"[INFO]: Client ID set to {self.client_id}")
+                elif "You create conference " in data.decode():
+                    # create
+                    self.conference_id = (
+                        data.decode().split("You create conference ")[1].strip()
+                    )
+                    print(f"[INFO]: Create Conference {self.client_id}")
+                    asyncio.create_task(self.create_conference(self.conference_id))
+                elif "Successfully join conference " in data.decode():
+                    # join
+                    self.conference_id = (
+                        data.decode().split('Successfully join conference ')[1].strip()
+                    )
+                    print(f"[INFO]: Join Conference {self.conference_id}")
+                    await self.join_conference(self.conference_id)
+                elif 'There is no conference ' in data.decode():
+                    # join fail
+                    print('Please choose another conference')
+                elif 'List: ' in data.decode():
+                    conference = (
+                        data.decode().split('List: ')[1].strip()
+                    )
+                    await self.list_conference(conference)
+                else:
+                    print('Message error')
+            else:
+                print("[Error]: No response from server.")
+                break
+            await asyncio.sleep(0.1)
 
-    async def keep_recv(self, recv_conn, decompress=None):
+    async def keep_recv_meet(self, meet_reader, decompress=None):
         """
-        Keep receiving data (text, video, audio, screen) from the server and process/display it accordingly.
+        Keep receiving data (text, video, audio, screen) from the (conference)server and process/display it accordingly.
         Assumes each message is prefixed with a 1-byte type identifier and a 4-byte big-endian length.
         Data Types:
             - 'T' : Text
@@ -277,21 +309,21 @@ class ConferenceClient:
         try:
             while True:
                 # Read the 1-byte type identifier
-                type_data = await recv_conn.readexactly(1)
+                type_data = await meet_reader.readexactly(1)
                 if not type_data:
                     print("[Error]: No data received for type identifier.")
                     break
                 data_type = type_data.decode("utf-8")
 
                 # Read the 4-byte length header
-                length_data = await recv_conn.readexactly(4)
+                length_data = await meet_reader.readexactly(4)
                 if not length_data:
                     print("[Error]: No data received for length header.")
                     break
                 message_length = struct.unpack(">I", length_data)[0]
 
                 # Read the actual message based on the length
-                message_data = await recv_conn.readexactly(message_length)
+                message_data = await meet_reader.readexactly(message_length)
                 if not message_data:
                     print("[Error]: No data received for message payload.")
                     break
@@ -306,9 +338,7 @@ class ConferenceClient:
                         client_id = text_message.get("client_id", "Unknown")
                         timestamp = text_message.get("timestamp", "Unknown")
                         message = text_message.get("message", "")
-
                         print(f"[{timestamp}] {client_id}: {message}")
-
                         await self.message_queue.put(
                             {
                                 "client_id": client_id,
@@ -316,13 +346,6 @@ class ConferenceClient:
                                 "message": message,
                             }
                         )
-
-                        if "Your client ID is" in message:
-                            self.client_id = message.split("Your client ID is ")[
-                                1
-                            ].strip()
-                            print(f"[INFO]: Client ID set to {self.client_id}")
-
                         ###### As well as conference details etc. ######
 
                     except json.JSONDecodeError:
@@ -403,6 +426,7 @@ class ConferenceClient:
 
                 else:
                     print(f"[Error]: Unsupported data type {data_type}")
+            await asyncio.sleep(0.01)
 
         except asyncio.IncompleteReadError:
             print("[Error]: Connection closed by the server.")
@@ -421,30 +445,33 @@ class ConferenceClient:
         """
         pass
 
-    async def send_message(self, message):
+    async def send_to_main(self,message):
+        if not self.writer:
+            print("[Error]: Not connected to server!")
+            return
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message_with_metadata = f"[{self.client_id} | {timestamp}] {message}"
+        self.writer.write(message_with_metadata.encode())
+
+    async def send_to_meet(self, message):
         """
         Send a text message to the server, prefixed with a type identifier and length header.
         The message includes the client's ID and a timestamp.
         """
-        if not self.writer:
+        if not self.meet_writer:
             print("[Error]: Not connected to server!")
             return
-
         data_type = "T".encode("utf-8")
-
         message_dict = {
             "client_id": self.client_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now().isoformat(),
             "message": message,
         }
-
         json_message = json.dumps(message_dict)
         message_bytes = json_message.encode("utf-8")
         length = struct.pack(">I", len(message_bytes))
-        self.writer.write(data_type + length + message_bytes)
-
-        await self.writer.drain()
-
+        self.meet_writer.write(data_type + length + message_bytes)
+        await self.meet_writer.drain()
         print(
             f"[INFO]: Sent message from {self.client_id} at {message_dict['timestamp']}"
         )
@@ -452,12 +479,8 @@ class ConferenceClient:
     async def connect_to_server(self):
         """Connect to the server using asyncio."""
         try:
-            self.reader, self.writer = await asyncio.open_connection(
-                self.server_addr, self.server_port
-            )
-            self.send_conn = self.writer
-            print(f"Connected to server at {self.server_addr}:{self.server_port}")
-            await self.writer.drain()
+            self.reader, self.writer = await asyncio.open_connection(self.server_addr[0],self.server_addr[1])
+            print(f"Connected to server at {self.server_addr[0]}:{self.server_addr[1]}")
         except Exception as e:
             print(f"Failed to connect to server: {e}")
             return False
@@ -481,13 +504,13 @@ class ConferenceClient:
                     print(HELP)
                 elif cmd_input == "create":
                     if not self.on_meeting:
-                        # await self.send_message("create")
+                        await self.send_to_main("create")
                         pass
                     else:
-                        print("You are in a conference")
+                        print("You are already in a conference")
                 elif cmd_input == "quit":
                     if self.on_meeting:
-                        self.quit_conference()
+                        await self.send_to_main("quit")
                     else:
                         print("You are not in any conference")
                 elif cmd_input == "cancel":
@@ -496,7 +519,7 @@ class ConferenceClient:
                     else:
                         print("You cannot cancel the conference")
                 elif cmd_input == "list":
-                    # await self.send_message("list")
+                    await self.send_to_main("list")
                     pass
                 else:
                     recognized = False
@@ -507,17 +530,17 @@ class ConferenceClient:
                     else:
                         input_conf_id = fields[1]
                         if input_conf_id.isdigit():
-                            await self.send_message(f"join {input_conf_id}")
+                            await self.send_to_main(f"join {input_conf_id}")
                         else:
                             print("[Warn]: Input conference ID must be in digital form")
                 elif fields[0] == "send":
                     message = fields[1]
-                    await self.send_message(message)
+                    await self.send_to_meet(message)
                 elif fields[0] == "camera":
                     if fields[1] == "on":
                         await self.share_switch("video")
                     elif fields[1] == "off":
-                        stop_camera
+                        stop_camera()
                         self.camera_on = False
                 elif fields[0] == "audio":
                     if fields[1] == "on":
@@ -549,7 +572,7 @@ class ConferenceClient:
         if not connected:
             return
 
-        await asyncio.gather(self.keep_recv(self.reader), self.receive_command())
+        await asyncio.gather(self.receive_command(),self.keep_recv_main())
 
 
 if __name__ == "__main__":

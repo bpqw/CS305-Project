@@ -33,11 +33,9 @@ class ConferenceServer:
                 if data_type == "T":
                     length_data = await reader.readexactly(4)
                     message_length = struct.unpack(">I", length_data)[0]
-
                     message_data = await reader.readexactly(message_length)
                     message = message_data.decode("utf-8")
                     print(f"Received text from client {client_id}: {message}")
-
                     message_dict = {
                         "client_id": client_id,
                         "timestamp": datetime.now().isoformat(),
@@ -84,23 +82,25 @@ class ConferenceServer:
         message_dict = {
             "client_id": 0,
             "timestamp": datetime.now().isoformat(),
-            "message": f"Welcome to the conference server! Your client ID is {client_id}",
+            "message": f"Welcome to the conference server! User {user_id}",
         }
-
         await self.send_framed_message(writer, "T", message_dict)
-
         while True:
             try:
-                type_data = await reader.readexactly(1)
+                type_data =  await reader.readexactly(1)
+                if not type_data:
+                    print(f'disconnect with {user_id}')
+                    self.clients_info.pop(user_id)
+                    self.client_conns.pop(user_id)
+                    return
                 data_type = type_data.decode("utf-8")
-                print(f"Received data type: {data_type} from client {client_id}")
-
-                await self.handle_data(reader, writer, data_type, client_id)
+                print(f"Received data type: {data_type} from client {user_id}")
+                await self.handle_data(reader, writer, data_type, user_id)
             except asyncio.IncompleteReadError:
-                print(f"Client {client_id} disconnected.")
+                print(f"Client {user_id} disconnected.")
                 break
             except Exception as e:
-                print(f"Error with client {client_id}: {e}")
+                print(f"Error with client {user_id}: {e}")
                 break
 
     async def broadcast(self, data_type, payload, sender_writer, is_text=False):
@@ -109,17 +109,24 @@ class ConferenceServer:
         'payload' is either a string (for text) or bytes (for binary data).
         'is_text' indicates whether payload should be treated as text (JSON) or raw bytes.
         """
-        for reader, writer in self.clients:
-            try:
-                if is_text:
-                    await self.send_framed_message(writer, data_type, payload)
-                else:
-                    length = struct.pack(">I", len(payload))  # 4 bytes
-                    writer.write(data_type.encode("utf-8") + length + payload)
-                    await writer.drain()
-                print(f"Broadcasted {data_type} data to a client. ")
-            except Exception as e:
-                print(f"Error broadcasting {data_type} data: {e}")
+        tasks = []
+        for client in self.client_conns:
+            writer = self.client_conns[client][1]
+            task = asyncio.create_task(self.one_of_broadcast(writer,data_type,payload,is_text))
+            tasks.append(task)
+        await asyncio.gather(*tasks)
+
+    async def one_of_broadcast(self, writer, data_type, payload, is_text):
+        try:
+            if is_text:
+                await self.send_framed_message(writer, data_type, payload)
+            else:
+                length = struct.pack(">I", len(payload))  # 4 bytes
+                writer.write(data_type.encode("utf-8") + length + payload)
+                await writer.drain()
+            print(f"Broadcasted {data_type} data to a client.")
+        except Exception as e:
+            print(f"Error broadcasting {data_type} data: {e}")
 
     async def send_framed_message(self, writer, data_type, message_dict):
         """
@@ -128,20 +135,18 @@ class ConferenceServer:
         try:
             json_message = json.dumps(message_dict)
             json_message_bytes = json_message.encode("utf-8")
-
             data_type_byte = data_type.encode("utf-8")  # 1 byte
             length = struct.pack(">I", len(json_message_bytes))  # 4 bytes
-
             writer.write(data_type_byte + length + json_message_bytes)
             await writer.drain()
             print(f"Sent {data_type} message to client.")
         except Exception as e:
             print(f"Error sending message: {e}")
 
-    async def log(self):
-        while self.running:
-            print("Something about server status")
-            await asyncio.sleep(LOG_INTERVAL)
+    # async def log(self):
+        # while self.running:
+        #     print("Something about server status")
+        #     await asyncio.sleep(LOG_INTERVAL)
 
     async def cancel_conference(self):
         """
@@ -171,17 +176,12 @@ class MainServer:
     def __init__(self, server_ip, main_port):
         self.server_ip = server_ip
         self.server_port = main_port
-        self.main_server = None
-
         self.clients_counter = 1
-        self.clients = []
-
+        self.clients = {} #通过字典方式储存对应的连接的客户端的reader和writer
         self.conference_counter = 1
         self.conference_conns = None
-        self.conference_servers = (
-            {}
-        )  # self.conference_servers[conference_id] = ConferenceManager
-
+        self.conference_servers = {} # self.conference_servers[conference_id] = ConferenceManager
+        self.main_server = None #目前看不出来有什么用
     async def handle_create_conference(self, writer):
         """
         create conference: create and start the corresponding ConferenceServer, and reply necessary info to client
@@ -191,13 +191,10 @@ class MainServer:
         self.conference_servers[new_conference_server.conference_id] = (
             new_conference_server  # 更新会议列表
         )
-
         new_conference_server.conf_serve_ports = 50000 + self.conference_counter
-        conference_id = f"Your conference ID is {self.conference_counter}"
+        conference_id = f"You create conference {self.conference_counter}"
         self.conference_counter += 1
-        writer.write(
-            conference_id.encode()
-        )  # 将会议编号发回给创建者，使之与会议建立连接
+        writer.write(conference_id.encode())  # 将会议编号发回给创建者，使之与会议建立连接
         asyncio.create_task(
             new_conference_server.start()
         )  # 初始化会议，使之开始监听客户端加入申请，实现多个用户同时可以加入会议
@@ -212,7 +209,7 @@ class MainServer:
         else:
             writer.write(f"There is no conference {conference_id}".encode())
 
-    def handle_quit_conference(self):
+    async def handle_quit_conference(self):
         """
         quit conference (in-meeting request & or no need to request)
         """
@@ -257,6 +254,7 @@ class MainServer:
         """
         running task: handle out-meeting (or also in-meeting) requests from clients
         """
+        #每次有客户端申请连接服务器时进入该函数
         client_id = self.clients_counter
         self.clients_counter += 1
         addr = writer.get_extra_info("peername")
@@ -283,7 +281,7 @@ class MainServer:
                 if command == "create":
                     await self.handle_create_conference(writer)
                 elif command == "quit":
-                    await self.handle_quit_conference(reader)
+                    await self.handle_quit_conference()
                 elif command == "cancel":
                     await self.handle_cancel_conference(reader, writer)
                 elif command == "list":
@@ -293,8 +291,8 @@ class MainServer:
             elif len(field) == 2:
                 if field[0] == "join":
                     await self.handle_join_conference(field[1], writer)
-                elif field[0] == "switch":
-                    await self.handle_join_conference(field[1], writer)
+                # elif field[0] == "switch":
+                #
                 else:
                     writer.write("wrong command".encode())
             else:
