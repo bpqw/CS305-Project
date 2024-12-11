@@ -19,7 +19,7 @@ class ConferenceServer:
             "audio",
         ]  # example data types in a video conference
         self.clients_info = {}  # clients_info[user_id] = addr
-        self.client_conns = {}  #:dict[int,(reader,writer)
+        self.clients_conns = {}  #:dict[int,(reader,writer)
         self.mode = "Client-Server"  # or 'P2P' if you want to support peer-to-peer conference mode
         self.owner_id = 0  # 会议创建者的编号
         self.conf = None  # 异步服务器管理器，用来关闭会议
@@ -41,7 +41,11 @@ class ConferenceServer:
                         "timestamp": datetime.now().isoformat(),
                         "message": message,
                     }
-
+                    message_data = json.loads(message)
+                    actual_message = message_data.get("message", "").strip()
+                    if actual_message == "cancel":
+                        await self.cancel_conference()
+                        return
                     await self.broadcast("T", message_dict, writer, is_text=True)
 
                 elif data_type in ("V", "A", "S"):
@@ -73,12 +77,12 @@ class ConferenceServer:
         if self.clients_info == {}:
             print(f"user{user_id}{addr} creates conference {self.conference_id}")
             self.clients_info[user_id] = addr
-            self.client_conns[user_id] = (reader, writer)
+            self.clients_conns[user_id] = (reader, writer)
             self.owner_id = user_id
         else:
             print(f"user{user_id}{addr} joins conference {self.conference_id}")
         self.clients_info[user_id] = addr
-        self.client_conns[user_id] = (reader, writer)
+        self.clients_conns[user_id] = (reader, writer)
         message_dict = {
             "client_id": 0,
             "timestamp": datetime.now().isoformat(),
@@ -91,13 +95,15 @@ class ConferenceServer:
                 if not type_data:
                     print(f'disconnect with {user_id}')
                     self.clients_info.pop(user_id)
-                    self.client_conns.pop(user_id)
+                    self.clients_conns.pop(user_id)
                     return
                 data_type = type_data.decode("utf-8")
                 print(f"Received data type: {data_type} from client {user_id}")
                 await self.handle_data(reader, writer, data_type, user_id)
             except asyncio.IncompleteReadError:
                 print(f"Client {user_id} disconnected.")
+                self.clients_conns.pop(user_id,None)
+                self.clients_info.pop(user_id,None)
                 break
             except Exception as e:
                 print(f"Error with client {user_id}: {e}")
@@ -110,8 +116,8 @@ class ConferenceServer:
         'is_text' indicates whether payload should be treated as text (JSON) or raw bytes.
         """
         tasks = []
-        for client in self.client_conns:
-            writer = self.client_conns[client][1]
+        for client in self.clients_conns:
+            writer = self.clients_conns[client][1]
             task = asyncio.create_task(self.one_of_broadcast(writer,data_type,payload,is_text))
             tasks.append(task)
         await asyncio.gather(*tasks)
@@ -152,14 +158,20 @@ class ConferenceServer:
         """
         handle cancel conference request: disconnect all connections to cancel the conference
         """
-        for user_id, (reader, writer) in list(self.client_conns.items()):
-            try:
-                writer.close()
-                await writer.wait_closed()
-                reader.feed_eof()
-            except Exception as e:
-                print(f"Error closing connection for user {user_id}: {e}")
-        self.conf.close()
+        if self.conf:
+            print(f"[INFO]: Cancel the conference {self.conference_id}")
+            self.conf.close()
+            await self.conf.wait_closed()
+            for user_id, (reader, writer) in list(self.clients_conns.items()):
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                    print(f"[INFO]: Disconnected client {user_id}")
+                except Exception as e:
+                    print(f"[ERROR]: Error disconnecting client {user_id}: {e}")
+            self.clients_conns.clear()
+            self.clients_info.clear()
+            print("[INFO]: Conference shutdown complete")
 
     async def start(self):
         """
@@ -209,22 +221,23 @@ class MainServer:
         else:
             writer.write(f"There is no conference {conference_id}".encode())
 
-    async def handle_quit_conference(self):
+    async def handle_quit_conference(self,writer):
         """
         quit conference (in-meeting request & or no need to request)
         """
+        writer.write('You will quit the conference'.encode())
         pass
 
     async def handle_cancel_conference(
-        self, reader, writer
+        self,conference_id,writer
     ):  # 从会议列表去除取消的会议
         """
         cancel conference (in-meeting request, a ConferenceServer should be closed by the MainServer)
         """
+        conference_id = int(conference_id)
         try:
-            conference_id = await asyncio.wait_for(reader.read(1024), None)
-            conference_id = conference_id.decode()
             self.conference_servers.pop(conference_id)
+            print("[INFO]: Server shutdown complete.")
             writer.write("Cancel successfully".encode())
         except Exception as e:
             print(f"Fail to cancel because {e}")
@@ -281,9 +294,7 @@ class MainServer:
                 if command == "create":
                     await self.handle_create_conference(writer)
                 elif command == "quit":
-                    await self.handle_quit_conference()
-                elif command == "cancel":
-                    await self.handle_cancel_conference(reader, writer)
+                    await self.handle_quit_conference(writer)
                 elif command == "list":
                     await self.handle_list_conference(writer)
                 else:
@@ -293,6 +304,8 @@ class MainServer:
                     await self.handle_join_conference(field[1], writer)
                 # elif field[0] == "switch":
                 #
+                elif field[0] == "cancel":
+                    await self.handle_cancel_conference(field[1],writer)
                 else:
                     writer.write("wrong command".encode())
             else:

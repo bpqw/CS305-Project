@@ -102,12 +102,27 @@ class ConferenceClient:
         """
         quit your on-going conference
         """
+        self.on_meeting = False
+        self.conference_id = 0
+        await self.disconnect_from_meeting()
 
+    async def disconnect_from_meeting(self):
+        if self.meet_writer:
+            print("[INFO]: Closing connection to the conference")
+            self.meet_writer.close()
+            await self.meet_writer.wait_closed()
+            self.meet_writer = None
+            self.meet_reader = None
 
-    def cancel_conference(self):
+    async def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
+        try:
+            await self.send_to_main(f"cancel {self.conference_id}")
+            await self.send_to_meet('cancel')
+        except Exception as e:
+            print(f'Error on cancel')
 
 
     async def list_conference(self, conference):
@@ -289,6 +304,10 @@ class ConferenceClient:
                         data.decode().split('List: ')[1].strip()
                     )
                     await self.list_conference(conference)
+                elif 'You will quit the conference' in data.decode():
+                    await self.quit_conference()
+                elif 'Cancel successfully' in data.decode():
+                    print('[INFO]: Cancel conference successfully')
                 else:
                     print('Message error')
             else:
@@ -427,9 +446,14 @@ class ConferenceClient:
                 else:
                     print(f"[Error]: Unsupported data type {data_type}")
             await asyncio.sleep(0.01)
-
         except asyncio.IncompleteReadError:
             print("[Error]: Connection closed by the server.")
+            self.on_meeting = False
+            self.conference_id = 0
+            if self.meet_writer:
+                self.meet_writer.close()
+                await self.meet_writer.wait_closed()
+            self.meet_reader = None
         except Exception as e:
             print(f"[Error]: Exception in keep_recv: {e}")
         finally:
@@ -515,7 +539,7 @@ class ConferenceClient:
                         print("You are not in any conference")
                 elif cmd_input == "cancel":
                     if self.is_owner:
-                        self.cancel_conference()
+                        await  self.cancel_conference()
                     else:
                         print("You cannot cancel the conference")
                 elif cmd_input == "list":
