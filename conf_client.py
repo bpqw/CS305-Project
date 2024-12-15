@@ -147,7 +147,7 @@ class ConferenceClient:
             await self.keep_share(
                 "audio",
                 self.meet_writer,
-                capture_wav_frames,
+                capture_voice,
                 compress=None,
                 fps_or_frequency=30,
             )
@@ -565,7 +565,6 @@ class ConferenceClient:
                     await self.send_to_meet(message)
                 elif fields[0] == "camera":
                     if fields[1] == "on":
-                        self.camera_on = True
                         await self.share_switch("video")
                     elif fields[1] == "off":
                         self.camera_on = False
