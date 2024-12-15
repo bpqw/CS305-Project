@@ -1,9 +1,11 @@
-HELP = 'Create         : create an conference\n' \
-       'Join [conf_id ]: join a conference with conference ID\n' \
-       'Quit           : quit an on-going conference\n' \
-       'Cancel         : cancel your on-going conference (only the manager)\n\n'
+HELP = (
+    "Create         : create an conference\n"
+    "Join [conf_id ]: join a conference with conference ID\n"
+    "Quit           : quit an on-going conference\n"
+    "Cancel         : cancel your on-going conference (only the manager)\n\n"
+)
 
-SERVER_IP = '127.0.0.1'
+SERVER_IP = "127.0.0.1"
 MAIN_SERVER_PORT = 8888
 TIMEOUT_SERVER = 5
 # DGRAM_SIZE = 1500  # UDP

@@ -16,7 +16,7 @@ class ConferenceClient:
     ):
         # sync client
         self.is_working = True
-        self.server_addr = (SERVER_IP,MAIN_SERVER_PORT)
+        self.server_addr = (SERVER_IP, MAIN_SERVER_PORT)
         self.client_id = None  # client id
         self.on_meeting = False  # status
         self.conns = (
@@ -34,8 +34,8 @@ class ConferenceClient:
         self.is_owner = False
         self.reader = None  # 对Main Server的接收端
         self.writer = None  # 对Main Server的发送端
-        self.meet_reader = None #对会议室的接收端
-        self.meet_writer = None #对会议室的发送端
+        self.meet_reader = None  # 对会议室的接收端
+        self.meet_writer = None  # 对会议室的发送端
 
     async def start_conference(self):
         """
@@ -43,8 +43,6 @@ class ConferenceClient:
         and
         start necessary running task for conference
         """
-
-
 
     def close_conference(self):
         """
@@ -56,9 +54,11 @@ class ConferenceClient:
         """
         create a conference: send create-conference request to server and obtain necessary data to
         """
-        conference_port = int(conference_id) + 50000 #服务器按50000+会议编号分配端口
+        conference_port = int(conference_id) + 50000  # 服务器按50000+会议编号分配端口
         try:
-            self.meet_reader, self.meet_writer = await asyncio.open_connection(self.server_addr[0], conference_port)
+            self.meet_reader, self.meet_writer = await asyncio.open_connection(
+                self.server_addr[0], conference_port
+            )
             print(
                 f"Connected to conference {conference_id} at {self.server_addr[0]}:{conference_port}"
             )
@@ -68,7 +68,7 @@ class ConferenceClient:
             try:
                 asyncio.create_task(self.keep_recv_meet(self.meet_reader))
             except Exception as e:
-                print(f'Errors when starting keep_recv_meet: {e}')
+                print(f"Errors when starting keep_recv_meet: {e}")
         except Exception as e:
             print(f"Failed to connect to conference {conference_id}: {e}")
             return False
@@ -91,7 +91,7 @@ class ConferenceClient:
             try:
                 asyncio.create_task(self.keep_recv_meet(self.meet_reader))
             except Exception as e:
-                print(f'error when keep recv')
+                print(f"error when keep recv")
         except Exception as e:
             print(f"Failed to connect to conference {conference_id}: {e}")
             return False
@@ -120,10 +120,9 @@ class ConferenceClient:
         """
         try:
             await self.send_to_main(f"cancel {self.conference_id}")
-            await self.send_to_meet('cancel')
+            await self.send_to_meet("cancel")
         except Exception as e:
-            print(f'Error on cancel')
-
+            print(f"Error on cancel")
 
     async def list_conference(self, conference):
         """list all the conferences"""
@@ -146,7 +145,11 @@ class ConferenceClient:
 
         elif data_type == "audio":
             await self.keep_share(
-                "audio", self.meet_writer, capture_voice, fps_or_frequency=30
+                "audio",
+                self.meet_writer,
+                capture_wav_frames,
+                compress=None,
+                fps_or_frequency=30,
             )
         elif data_type == "screen":
             await self.keep_share(
@@ -265,6 +268,7 @@ class ConferenceClient:
 
         else:
             print(f"[Error]: Unsupported data type {data_type}")
+
     async def keep_recv_main(self):
         """Receive messages from the server."""
         if not self.reader:
@@ -292,24 +296,22 @@ class ConferenceClient:
                 elif "Successfully join conference " in data.decode():
                     # join
                     self.conference_id = (
-                        data.decode().split('Successfully join conference ')[1].strip()
+                        data.decode().split("Successfully join conference ")[1].strip()
                     )
                     print(f"[INFO]: Join Conference {self.conference_id}")
                     await self.join_conference(self.conference_id)
-                elif 'There is no conference ' in data.decode():
+                elif "There is no conference " in data.decode():
                     # join fail
-                    print('Please choose another conference')
-                elif 'List: ' in data.decode():
-                    conference = (
-                        data.decode().split('List: ')[1].strip()
-                    )
+                    print("Please choose another conference")
+                elif "List: " in data.decode():
+                    conference = data.decode().split("List: ")[1].strip()
                     await self.list_conference(conference)
-                elif 'You will quit the conference' in data.decode():
+                elif "You will quit the conference" in data.decode():
                     await self.quit_conference()
-                elif 'Cancel successfully' in data.decode():
-                    print('[INFO]: Cancel conference successfully')
+                elif "Cancel successfully" in data.decode():
+                    print("[INFO]: Cancel conference successfully")
                 else:
-                    print('Message error')
+                    print("Message error")
             else:
                 print("[Error]: No response from server.")
                 break
@@ -365,7 +367,6 @@ class ConferenceClient:
                                 "message": message,
                             }
                         )
-                        ###### As well as conference details etc. ######
 
                     except json.JSONDecodeError:
                         print("[Error]: Failed to decode JSON message.")
@@ -391,7 +392,7 @@ class ConferenceClient:
                         frame = cv2.imdecode(frame_np, cv2.IMREAD_COLOR)
                         if frame is not None:
                             cv2.imshow("Received Video", frame)
-                            if cv2.waitKey(1) & 0xFF == ord("q"):
+                            if cv2.waitKey(10) & 0xFF == ord("q"):
                                 print("[INFO]: Quitting video display.")
                                 break
                         else:
@@ -469,7 +470,7 @@ class ConferenceClient:
         """
         pass
 
-    async def send_to_main(self,message):
+    async def send_to_main(self, message):
         if not self.writer:
             print("[Error]: Not connected to server!")
             return
@@ -503,7 +504,9 @@ class ConferenceClient:
     async def connect_to_server(self):
         """Connect to the server using asyncio."""
         try:
-            self.reader, self.writer = await asyncio.open_connection(self.server_addr[0],self.server_addr[1])
+            self.reader, self.writer = await asyncio.open_connection(
+                self.server_addr[0], self.server_addr[1]
+            )
             print(f"Connected to server at {self.server_addr[0]}:{self.server_addr[1]}")
         except Exception as e:
             print(f"Failed to connect to server: {e}")
@@ -539,7 +542,7 @@ class ConferenceClient:
                         print("You are not in any conference")
                 elif cmd_input == "cancel":
                     if self.is_owner:
-                        await  self.cancel_conference()
+                        await self.cancel_conference()
                     else:
                         print("You cannot cancel the conference")
                 elif cmd_input == "list":
@@ -562,20 +565,21 @@ class ConferenceClient:
                     await self.send_to_meet(message)
                 elif fields[0] == "camera":
                     if fields[1] == "on":
+                        self.camera_on = True
                         await self.share_switch("video")
                     elif fields[1] == "off":
-                        stop_camera()
                         self.camera_on = False
+                        stop_camera()  ## to be implemented and tested
                 elif fields[0] == "audio":
                     if fields[1] == "on":
                         await self.share_switch("audio")
                     elif fields[1] == "off":
-                        pass
+                        pass  ##
                 elif fields[0] == "screen":
                     if fields[1] == "on":
                         await self.share_switch("screen")
                     elif fields[1] == "off":
-                        pass
+                        pass  ##
                 else:
                     recognized = False
             else:
@@ -596,7 +600,7 @@ class ConferenceClient:
         if not connected:
             return
 
-        await asyncio.gather(self.receive_command(),self.keep_recv_main())
+        await asyncio.gather(self.receive_command(), self.keep_recv_main())
 
 
 if __name__ == "__main__":

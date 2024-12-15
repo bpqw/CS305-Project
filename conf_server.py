@@ -24,12 +24,17 @@ class ConferenceServer:
         self.owner_id = 0  # 会议创建者的编号
         self.conf = None  # 异步服务器管理器，用来关闭会议
 
-    async def handle_data(self, reader, writer, data_type, client_id):
+    async def handle_data(self, reader, writer, client_id):
         """
         Continuously receive data from a client and broadcast it to others.
         """
         try:
             while True:
+                type_data = await reader.readexactly(1)
+                if not type_data:
+                    print(f"disconnect with {client_id}")
+                    break
+                data_type = type_data.decode("utf-8")
                 if data_type == "T":
                     length_data = await reader.readexactly(4)
                     message_length = struct.unpack(">I", length_data)[0]
@@ -89,25 +94,27 @@ class ConferenceServer:
             "message": f"Welcome to the conference server! User {user_id}",
         }
         await self.send_framed_message(writer, "T", message_dict)
-        while True:
-            try:
-                type_data =  await reader.readexactly(1)
-                if not type_data:
-                    print(f'disconnect with {user_id}')
-                    self.clients_info.pop(user_id)
-                    self.clients_conns.pop(user_id)
-                    return
-                data_type = type_data.decode("utf-8")
-                print(f"Received data type: {data_type} from client {user_id}")
-                await self.handle_data(reader, writer, data_type, user_id)
-            except asyncio.IncompleteReadError:
-                print(f"Client {user_id} disconnected.")
-                self.clients_conns.pop(user_id,None)
-                self.clients_info.pop(user_id,None)
-                break
-            except Exception as e:
-                print(f"Error with client {user_id}: {e}")
-                break
+
+        asyncio.create_task(self.handle_data(reader, writer, user_id))
+        # while True:
+        #     try:
+        #         type_data = await reader.readexactly(1)
+        #         if not type_data:
+        #             print(f"disconnect with {user_id}")
+        #             self.clients_info.pop(user_id)
+        #             self.clients_conns.pop(user_id)
+        #             return
+        #         data_type = type_data.decode("utf-8")
+        #         print(f"Received data type: {data_type} from client {user_id}")
+        #         await self.handle_data(reader, writer, data_type, user_id)
+        #     except asyncio.IncompleteReadError:
+        #         print(f"Client {user_id} disconnected.")
+        #         self.clients_conns.pop(user_id, None)
+        #         self.clients_info.pop(user_id, None)
+        #         break
+        #     except Exception as e:
+        #         print(f"Error with client {user_id}: {e}")
+        #         break
 
     async def broadcast(self, data_type, payload, sender_writer, is_text=False):
         """
@@ -118,7 +125,9 @@ class ConferenceServer:
         tasks = []
         for client in self.clients_conns:
             writer = self.clients_conns[client][1]
-            task = asyncio.create_task(self.one_of_broadcast(writer,data_type,payload,is_text))
+            task = asyncio.create_task(
+                self.one_of_broadcast(writer, data_type, payload, is_text)
+            )
             tasks.append(task)
         await asyncio.gather(*tasks)
 
@@ -150,9 +159,9 @@ class ConferenceServer:
             print(f"Error sending message: {e}")
 
     # async def log(self):
-        # while self.running:
-        #     print("Something about server status")
-        #     await asyncio.sleep(LOG_INTERVAL)
+    # while self.running:
+    #     print("Something about server status")
+    #     await asyncio.sleep(LOG_INTERVAL)
 
     async def cancel_conference(self):
         """
@@ -189,11 +198,14 @@ class MainServer:
         self.server_ip = server_ip
         self.server_port = main_port
         self.clients_counter = 1
-        self.clients = {} #通过字典方式储存对应的连接的客户端的reader和writer
+        self.clients = {}  # 通过字典方式储存对应的连接的客户端的reader和writer
         self.conference_counter = 1
         self.conference_conns = None
-        self.conference_servers = {} # self.conference_servers[conference_id] = ConferenceManager
-        self.main_server = None #目前看不出来有什么用
+        self.conference_servers = (
+            {}
+        )  # self.conference_servers[conference_id] = ConferenceManager
+        self.main_server = None  # 目前看不出来有什么用
+
     async def handle_create_conference(self, writer):
         """
         create conference: create and start the corresponding ConferenceServer, and reply necessary info to client
@@ -206,7 +218,9 @@ class MainServer:
         new_conference_server.conf_serve_ports = 50000 + self.conference_counter
         conference_id = f"You create conference {self.conference_counter}"
         self.conference_counter += 1
-        writer.write(conference_id.encode())  # 将会议编号发回给创建者，使之与会议建立连接
+        writer.write(
+            conference_id.encode()
+        )  # 将会议编号发回给创建者，使之与会议建立连接
         asyncio.create_task(
             new_conference_server.start()
         )  # 初始化会议，使之开始监听客户端加入申请，实现多个用户同时可以加入会议
@@ -221,15 +235,15 @@ class MainServer:
         else:
             writer.write(f"There is no conference {conference_id}".encode())
 
-    async def handle_quit_conference(self,writer):
+    async def handle_quit_conference(self, writer):
         """
         quit conference (in-meeting request & or no need to request)
         """
-        writer.write('You will quit the conference'.encode())
+        writer.write("You will quit the conference".encode())
         pass
 
     async def handle_cancel_conference(
-        self,conference_id,writer
+        self, conference_id, writer
     ):  # 从会议列表去除取消的会议
         """
         cancel conference (in-meeting request, a ConferenceServer should be closed by the MainServer)
@@ -267,7 +281,7 @@ class MainServer:
         """
         running task: handle out-meeting (or also in-meeting) requests from clients
         """
-        #每次有客户端申请连接服务器时进入该函数
+        # 每次有客户端申请连接服务器时进入该函数
         client_id = self.clients_counter
         self.clients_counter += 1
         addr = writer.get_extra_info("peername")
@@ -305,7 +319,7 @@ class MainServer:
                 # elif field[0] == "switch":
                 #
                 elif field[0] == "cancel":
-                    await self.handle_cancel_conference(field[1],writer)
+                    await self.handle_cancel_conference(field[1], writer)
                 else:
                     writer.write("wrong command".encode())
             else:

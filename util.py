@@ -66,11 +66,26 @@ def stop_camera(self):
 # audio setting
 FORMAT = pyaudio.paInt16
 audio = pyaudio.PyAudio()
+# print("Default input device:", audio.get_default_input_device_info(), "\n")
+# print("Default output device:", audio.get_default_output_device_info(), "\n")
+# for i in range(audio.get_device_count()):
+#     info = audio.get_device_info_by_index(i)
+#     if info.get("maxOutputChannels") > 0:
+#         print(
+#             i,
+#             info.get("name"),
+#             info.get("maxInputChannels"),
+#             info.get("maxOutputChannels"),
+#         )
 streamin = audio.open(
     format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
 )
 streamout = audio.open(
-    format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK
+    format=FORMAT,
+    channels=CHANNELS,
+    rate=RATE,
+    output=True,
+    frames_per_buffer=CHUNK,
 )
 
 
