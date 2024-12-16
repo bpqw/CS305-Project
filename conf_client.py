@@ -535,7 +535,9 @@ class ConferenceClient:
         json_message = json.dumps(message_dict)
         message_bytes = json_message.encode("utf-8")
         total_length = len(message_bytes)
-        self.meet_writer.write(data_type + total_length + message_bytes)
+        self.meet_writer.write(
+            data_type + struct.pack(">I", total_length) + message_bytes
+        )
         await self.meet_writer.drain()
         print(
             f"[INFO]: Sent message from {self.client_id} at {message_dict['timestamp']}"
