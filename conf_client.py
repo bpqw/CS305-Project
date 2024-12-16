@@ -149,7 +149,7 @@ class ConferenceClient:
                 self.meet_writer,
                 capture_voice,
                 compress=None,
-                fps_or_frequency=30,
+                fps_or_frequency=120,
             )
         elif data_type == "screen":
             await self.keep_share(
@@ -412,10 +412,11 @@ class ConferenceClient:
                         except Exception as e:
                             print(f"[Error]: Decompression failed: {e}")
                             continue
-                        try:
-                            streamout.write(message_data)
-                        except Exception as e:
-                            print(f"[Error]: Exception while playing audio: {e}")
+                    try:
+                        # print(f"Received audio length: {len(message_data)}")
+                        streamout.write(message_data)
+                    except Exception as e:
+                        print(f"[Error]: Exception while playing audio: {e}")
 
                 elif data_type == "S":  # Screen
                     decompress = decompress_image

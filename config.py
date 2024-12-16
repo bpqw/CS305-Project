@@ -1,3 +1,5 @@
+import pyaudio
+
 HELP = (
     "Create         : create an conference\n"
     "Join [conf_id ]: join a conference with conference ID\n"
@@ -14,5 +16,6 @@ LOG_INTERVAL = 2
 CHUNK = 1024
 CHANNELS = 1  # Channels for audio capture
 RATE = 44100  # Sampling rate for audio capture
+FORMAT = pyaudio.paInt16
 
 camera_width, camera_height = 480, 480  # resolution for camera capture
