@@ -78,15 +78,8 @@ audio = pyaudio.PyAudio()
 #             info.get("maxOutputChannels"),
 #         )
 streamin = audio.open(
-    format=FORMAT,
-    channels=CHANNELS,
-    rate=RATE,
-    input=True,
-    frames_per_buffer=CHUNK
+    format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
 )
-# for i in range(audio.get_device_count()):
-#     info = audio.get_device_info_by_index(i)
-#     print(f"Device {i}: {info['name']} - Output Channels: {info['maxOutputChannels']}")
 streamout = audio.open(
     format=FORMAT,
     channels=CHANNELS,
@@ -94,10 +87,6 @@ streamout = audio.open(
     output=True,
     frames_per_buffer=CHUNK,
 )
-
-
-
-
 
 
 def capture_voice():

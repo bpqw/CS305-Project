@@ -37,6 +37,9 @@ class ConferenceClient:
         self.meet_reader = None  # 对会议室的接收端
         self.meet_writer = None  # 对会议室的发送端
 
+        self.video_windows = {}
+        self.screen_windows = {}
+
     async def start_conference(self):
         """
         init conns when create or join a conference with necessary conference_info
@@ -169,6 +172,7 @@ class ConferenceClient:
         Capture and send data based on the data type (video, audio).
         """
         if data_type == "video":
+            compress = compress_image
             while True:
                 frame = capture_function()
                 if frame is None:
@@ -196,9 +200,12 @@ class ConferenceClient:
                         continue
 
                 data_type_byte = b"V"
-                length = struct.pack(">I", len(frame_bytes))
-
-                send_conn.write(data_type_byte + length + frame_bytes)
+                client_id_packed = struct.pack(">I", int(self.client_id))
+                total_length = len(client_id_packed) + len(frame_bytes)
+                length_packed = struct.pack(">I", total_length)
+                send_conn.write(
+                    data_type_byte + length_packed + client_id_packed + frame_bytes
+                )
 
                 await send_conn.drain()
                 await asyncio.sleep(1 / fps_or_frequency)
@@ -224,14 +231,18 @@ class ConferenceClient:
                         continue
 
                 data_type_byte = b"A"
-                length = struct.pack(">I", len(audio_data))
-
-                send_conn.write(data_type_byte + length + audio_data)
+                client_id_packed = struct.pack(">I", self.client_id)
+                total_length = len(client_id_packed) + len(audio_data)
+                length_packed = struct.pack(">I", total_length)
+                send_conn.write(
+                    data_type_byte + length_packed + client_id_packed + audio_data
+                )
 
                 await send_conn.drain()
                 await asyncio.sleep(1 / fps_or_frequency)
 
         elif data_type == "screen":
+            compress = compress_image
             while True:
                 screen_frame = capture_function()
                 if screen_frame is None:
@@ -259,9 +270,12 @@ class ConferenceClient:
                         continue
 
                 data_type_byte = b"S"
-                length = struct.pack(">I", len(screen_bytes))
-
-                send_conn.write(data_type_byte + length + screen_bytes)
+                client_id_packed = struct.pack(">I", int(self.client_id))
+                total_length = len(client_id_packed) + len(screen_bytes)
+                length_packed = struct.pack(">I", total_length)
+                send_conn.write(
+                    data_type_byte + length_packed + client_id_packed + screen_bytes
+                )
 
                 await send_conn.drain()
                 await asyncio.sleep(1 / fps_or_frequency)
@@ -291,7 +305,7 @@ class ConferenceClient:
                     self.conference_id = (
                         data.decode().split("You create conference ")[1].strip()
                     )
-                    print(f"[INFO]: Create Conference {self.client_id}")
+                    print(f"[INFO]: Create Conference {self.conference_id}")
                     asyncio.create_task(self.create_conference(self.conference_id))
                 elif "Successfully join conference " in data.decode():
                     # join
@@ -374,6 +388,9 @@ class ConferenceClient:
                         print(f"[Error]: Exception while processing text message: {e}")
 
                 elif data_type == "V":  # Video
+                    client_id_packed = message_data[:4]
+                    client_id = struct.unpack(">I", client_id_packed)[0]
+                    message_data = message_data[4:]
                     decompress = decompress_image
                     if decompress:
                         try:
@@ -390,8 +407,16 @@ class ConferenceClient:
                     try:
                         frame_np = np.frombuffer(message_data, dtype=np.uint8)
                         frame = cv2.imdecode(frame_np, cv2.IMREAD_COLOR)
+
                         if frame is not None:
-                            cv2.imshow("Received Video", frame)
+                            if client_id not in self.video_windows:
+                                window_name = f"Video - Client {client_id}"
+                                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                                self.video_windows[client_id] = window_name
+                                print(f"[INFO]: Created window for Client {client_id}")
+
+                            window_name = self.video_windows[client_id]
+                            cv2.imshow(window_name, frame)
                             if cv2.waitKey(10) & 0xFF == ord("q"):
                                 print("[INFO]: Quitting video display.")
                                 break
@@ -401,6 +426,9 @@ class ConferenceClient:
                         print(f"[Error]: Exception while decoding video frame: {e}")
 
                 elif data_type == "A":  # Audio
+                    client_id_packed = message_data[:4]
+                    client_id = struct.unpack(">I", client_id_packed)[0]
+                    message_data = message_data[4:]
                     if decompress:
                         try:
                             message_data = decompress(message_data)
@@ -419,6 +447,9 @@ class ConferenceClient:
                         print(f"[Error]: Exception while playing audio: {e}")
 
                 elif data_type == "S":  # Screen
+                    client_id_packed = message_data[:4]
+                    client_id = struct.unpack(">I", client_id_packed)[0]
+                    message_data = message_data[4:]
                     decompress = decompress_image
                     if decompress:
                         try:
@@ -433,10 +464,24 @@ class ConferenceClient:
                             continue
 
                     try:
+                        if message_length < 4:
+                            print("[Error]: Incomplete screen frame received.")
+                            continue
+
                         screen_np = np.frombuffer(message_data, dtype=np.uint8)
                         screen_frame = cv2.imdecode(screen_np, cv2.IMREAD_COLOR)
+
                         if screen_frame is not None:
-                            cv2.imshow("Received Screen", screen_frame)
+                            if client_id not in self.screen_windows:
+                                window_name = f"Screen - Client {client_id}"
+                                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                                self.screen_windows[client_id] = window_name
+                                print(
+                                    f"[INFO]: Created window for Screen of Client {client_id}"
+                                )
+
+                            window_name = self.screen_windows[client_id]
+                            cv2.imshow(window_name, screen_frame)
                             if cv2.waitKey(1) & 0xFF == ord("q"):
                                 print("[INFO]: Quitting screen display.")
                                 break
@@ -465,12 +510,6 @@ class ConferenceClient:
             streamout.close()
             print("[INFO]: Receiver connection closed.")
 
-    def output_data(self):
-        """
-        running task: output received stream data
-        """
-        pass
-
     async def send_to_main(self, message):
         if not self.writer:
             print("[Error]: Not connected to server!")
@@ -495,8 +534,8 @@ class ConferenceClient:
         }
         json_message = json.dumps(message_dict)
         message_bytes = json_message.encode("utf-8")
-        length = struct.pack(">I", len(message_bytes))
-        self.meet_writer.write(data_type + length + message_bytes)
+        total_length = len(message_bytes)
+        self.meet_writer.write(data_type + total_length + message_bytes)
         await self.meet_writer.drain()
         print(
             f"[INFO]: Sent message from {self.client_id} at {message_dict['timestamp']}"
