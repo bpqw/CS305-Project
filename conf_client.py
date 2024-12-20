@@ -496,6 +496,7 @@ class ConferenceClient:
         except asyncio.IncompleteReadError:
             print("[Error]: Connection closed by the server.")
             self.on_meeting = False
+            self.is_owner = False
             self.conference_id = 0
             if self.meet_writer:
                 self.meet_writer.close()
