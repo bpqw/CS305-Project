@@ -557,7 +557,7 @@ class ConferenceClient:
 
     async def receive_command(self):
         while True:
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             if not self.on_meeting:
                 status = "Free"
             else:
@@ -583,10 +583,13 @@ class ConferenceClient:
                     else:
                         print("You are not in any conference")
                 elif cmd_input == "cancel":
-                    if self.is_owner:
-                        await self.cancel_conference()
+                    if self.on_meeting:
+                        if self.is_owner:
+                            await self.cancel_conference()
+                        else:
+                            print("You cannot cancel the conference")
                     else:
-                        print("You cannot cancel the conference")
+                        print("You are not in any conference")
                 elif cmd_input == "list":
                     await self.send_to_main("list")
                     pass
@@ -603,24 +606,36 @@ class ConferenceClient:
                         else:
                             print("[Warn]: Input conference ID must be in digital form")
                 elif fields[0] == "send":
-                    message = fields[1]
-                    await self.send_to_meet(message)
+                    if self.on_meeting:
+                        message = fields[1]
+                        await self.send_to_meet(message)
+                    else:
+                        print('You are not in any conference')
                 elif fields[0] == "camera":
-                    if fields[1] == "on":
-                        await self.share_switch("video")
-                    elif fields[1] == "off":
-                        self.camera_on = False
-                        stop_camera()  ## to be implemented and tested
+                    if self.on_meeting:
+                        if fields[1] == "on":
+                            await self.share_switch("video")
+                        elif fields[1] == "off":
+                            self.camera_on = False
+                            stop_camera()  ## to be implemented and tested
+                    else:
+                        print('You are not in any conference')
                 elif fields[0] == "audio":
-                    if fields[1] == "on":
-                        await self.share_switch("audio")
-                    elif fields[1] == "off":
-                        pass  ##
+                    if self.on_meeting:
+                        if fields[1] == "on":
+                            await self.share_switch("audio")
+                        elif fields[1] == "off":
+                            pass  ##
+                    else:
+                        print('You are not in any conference')
                 elif fields[0] == "screen":
-                    if fields[1] == "on":
-                        await self.share_switch("screen")
-                    elif fields[1] == "off":
-                        pass  ##
+                    if self.on_meeting:
+                        if fields[1] == "on":
+                            await self.share_switch("screen")
+                        elif fields[1] == "off":
+                            pass  ##
+                    else:
+                        print('You are not in any conference')
                 else:
                     recognized = False
             else:
