@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 
+from PyQt5.QtCore import pyqtSignal
+
 from util import *
 import struct
 import json
@@ -39,6 +41,9 @@ class ConferenceClient:
 
         self.video_windows = {}
         self.screen_windows = {}
+
+        self.input = None
+
 
     async def start_conference(self):
         """
@@ -231,7 +236,7 @@ class ConferenceClient:
                         continue
 
                 data_type_byte = b"A"
-                client_id_packed = struct.pack(">I", self.client_id)
+                client_id_packed = struct.pack(">I", int(self.client_id))
                 total_length = len(client_id_packed) + len(audio_data)
                 length_packed = struct.pack(">I", total_length)
                 send_conn.write(
@@ -417,6 +422,7 @@ class ConferenceClient:
 
                             window_name = self.video_windows[client_id]
                             cv2.imshow(window_name, frame)
+                            cv2.waitKey(1)
                             if cv2.waitKey(10) & 0xFF == ord("q"):
                                 print("[INFO]: Quitting video display.")
                                 break
@@ -482,6 +488,7 @@ class ConferenceClient:
 
                             window_name = self.screen_windows[client_id]
                             cv2.imshow(window_name, screen_frame)
+                            cv2.waitKey(1)
                             if cv2.waitKey(1) & 0xFF == ord("q"):
                                 print("[INFO]: Quitting screen display.")
                                 break
@@ -492,7 +499,7 @@ class ConferenceClient:
 
                 else:
                     print(f"[Error]: Unsupported data type {data_type}")
-            await asyncio.sleep(0.01)
+                await asyncio.sleep(0.01)
         except asyncio.IncompleteReadError:
             print("[Error]: Connection closed by the server.")
             self.on_meeting = False
@@ -564,90 +571,98 @@ class ConferenceClient:
             else:
                 status = f"OnMeeting-{self.conference_id}"
             recognized = True
-            cmd_input = await aioconsole.ainput(
-                f'({status}) Please enter a operation (enter "?" to help): '
-            )
-            cmd_input = cmd_input.strip().lower()
-            fields = cmd_input.split(maxsplit=1)
-            if len(fields) == 1:
-                if cmd_input in ("?", "？"):
-                    print(HELP)
-                elif cmd_input == "create":
-                    if not self.on_meeting:
-                        await self.send_to_main("create")
-                        pass
-                    else:
-                        print("You are already in a conference")
-                elif cmd_input == "quit":
-                    if self.on_meeting:
-                        await self.send_to_main("quit")
-                    else:
-                        print("You are not in any conference")
-                elif cmd_input == "cancel":
-                    if self.on_meeting:
+            # cmd_input = await aioconsole.ainput(
+            #     f'({status}) Please enter a operation (enter "?" to help): '
+            # )
+
+            # cmd_input = cmd_input.strip().lower()
+            if self.input is not None:
+                fields = self.input.split(maxsplit=1)
+                if len(fields) == 1:
+                    if self.input in ("?", "？"):
+                        print(HELP)
+                        self.input = None
+                    elif self.input == "create":
+                        if not self.on_meeting:
+                            await self.send_to_main("create")
+                            self.input = None
+                            pass
+                        else:
+                            print("You are already in a conference")
+                            self.input = None
+                    elif self.input == "quit":
+                        if self.on_meeting:
+                            await self.send_to_main("quit")
+                            self.input = None
+                        else:
+                            print("You are not in any conference")
+                            self.input = None
+                    elif self.input == "cancel":
                         if self.is_owner:
                             await self.cancel_conference()
+                            self.input = None
                         else:
                             print("You cannot cancel the conference")
+                            self.input = None
+                    elif self.input == "list":
+                        await self.send_to_main("list")
+                        self.input = None
+                        pass
                     else:
-                        print("You are not in any conference")
-                elif cmd_input == "list":
-                    await self.send_to_main("list")
-                    pass
-                else:
-                    recognized = False
-            elif len(fields) == 2:
-                if fields[0] == "join":
-                    if self.on_meeting:
-                        print("You are already in a conference")
-                    else:
-                        input_conf_id = fields[1]
-                        if input_conf_id.isdigit():
-                            await self.send_to_main(f"join {input_conf_id}")
+                        recognized = False
+                        self.input = None
+                elif len(fields) == 2:
+                    if fields[0] == "join":
+                        if self.on_meeting:
+                            print("You are already in a conference")
+                            self.input = None
                         else:
-                            print("[Warn]: Input conference ID must be in digital form")
-                elif fields[0] == "send":
-                    if self.on_meeting:
+                            input_conf_id = fields[1]
+                            if input_conf_id.isdigit():
+                                await self.send_to_main(f"join {input_conf_id}")
+                                self.input = None
+                            else:
+                                print("[Warn]: Input conference ID must be in digital form")
+                                self.input = None
+                    elif fields[0] == "send":
                         message = fields[1]
                         await self.send_to_meet(message)
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "camera":
-                    if self.on_meeting:
+                        self.input = None
+                    elif fields[0] == "camera":
                         if fields[1] == "on":
                             await self.share_switch("video")
+                            self.input = None
                         elif fields[1] == "off":
                             self.camera_on = False
                             stop_camera()  ## to be implemented and tested
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "audio":
-                    if self.on_meeting:
+                            self.input = None
+                    elif fields[0] == "audio":
                         if fields[1] == "on":
                             await self.share_switch("audio")
+                            self.input = None
                         elif fields[1] == "off":
+                            self.input = None
                             pass  ##
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "screen":
-                    if self.on_meeting:
+                    elif fields[0] == "screen":
                         if fields[1] == "on":
                             await self.share_switch("screen")
+                            self.input = None
                         elif fields[1] == "off":
+                            self.input = None
                             pass  ##
                     else:
-                        print('You are not in any conference')
+                        recognized = False
+                        self.input = None
                 else:
                     recognized = False
-            else:
-                recognized = False
+                    self.input = None
 
-            if not recognized:
-                print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
+                if not recognized:
+                    print(f"[Warn]: Unrecognized cmd_input {self.input}")
 
-            if not self.message_queue.empty():
-                await self.message_queue.get()
-                await asyncio.sleep(0.1)
+                if not self.message_queue.empty():
+                    await self.message_queue.get()
+                    await asyncio.sleep(0.1)
 
     async def start(self):
         """
