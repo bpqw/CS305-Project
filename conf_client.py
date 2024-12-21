@@ -1,12 +1,10 @@
 import asyncio
 import datetime
-
-from util import *
 import struct
 import json
 import cv2
 import numpy as np
-import aioconsole
+from util import *
 from config import *
 
 
@@ -14,31 +12,39 @@ class ConferenceClient:
     def __init__(
         self,
     ):
-        # sync client
-        self.is_working = True
+        # Connection related
         self.server_addr = (SERVER_IP, MAIN_SERVER_PORT)
-        self.client_id = None  # client id
-        self.on_meeting = False  # status
-        self.conns = (
-            None  # you may need to maintain multiple conns for a single conference
-        )
-        self.support_data_types = []  # for some types of data
-        self.share_data = {}
-        self.conference_info = (
-            None  # you may need to save and update some conference_info regularly
-        )
-        self.recv_data = None  # you may need to save received streamd data from other clients in conference
-        self.message_queue = asyncio.Queue()
-        self.camera_on = False
+        self.client_id = None
+
+        # Meeting related
         self.conference_id = 0
         self.is_owner = False
+        self.on_meeting = False
         self.reader = None  # 对Main Server的接收端
         self.writer = None  # 对Main Server的发送端
         self.meet_reader = None  # 对会议室的接收端
         self.meet_writer = None  # 对会议室的发送端
 
-        self.video_windows = {}
-        self.screen_windows = {}
+        # Input related
+        self.input = None
+
+        # Message related
+        self.message_queue = asyncio.Queue()
+
+        # Video related
+        self.cap = None
+        self.camera_on = False
+        self.frame = None
+        self.video_task = None
+        self.camera_stop_event = asyncio.Event()
+
+        # Audio related
+
+        # Screen related
+        self.screen_on = False
+        self.screen_frame = None
+        self.screen_task = None
+        self.screen_stop_event = asyncio.Event()
 
     async def start_conference(self):
         """
@@ -131,157 +137,237 @@ class ConferenceClient:
         """list all the conferences"""
         print(conference)
 
-    async def share_switch(self, data_type):
-        """
-        switch for sharing certain type of data (screen, camera, audio, etc.)
-        """
-        if data_type == "video":
-            if not self.camera_on:
-                self.camera_on = True
-                await self.keep_share(
-                    "video",
-                    self.meet_writer,
-                    capture_camera,
-                    compress_image,
-                    fps_or_frequency=30,
-                )
-
-        elif data_type == "audio":
-            await self.keep_share(
-                "audio",
-                self.meet_writer,
-                capture_voice,
-                compress=None,
-                fps_or_frequency=120,
-            )
-        elif data_type == "screen":
-            await self.keep_share(
-                "screen",
-                self.meet_writer,
-                capture_screen,
-                compress_image,
-                fps_or_frequency=30,
-            )
+    def capture_frame(self):
+        """Capture a single frame from the camera."""
+        if self.cap and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                return frame
+            else:
+                print("[Error]: Failed to read frame from camera.")
+                return None
         else:
-            print("[Error]: Unsupported data type")
+            print("[Error]: Camera is not initialized or already closed.")
+            return None
+
+    async def start_video_share(self):
+        """Start sharing video by initializing video capture and starting the keep_share coroutine."""
+        if not self.camera_on:
+            self.camera_on = True
+            self.cap = cv2.VideoCapture(0)
+            if not self.cap.isOpened():
+                print("[Error]: Unable to open the camera.")
+                self.camera_on = False
+                return
+            self.camera_stop_event.clear()
+            self.video_task = asyncio.create_task(
+                self.keep_share(
+                    data_type="video",
+                    send_conn=self.meet_writer,
+                    capture_function=self.capture_frame,
+                    compress=compress_image,
+                    fps_or_frequency=30,
+                    stop_event=self.camera_stop_event,
+                )
+            )
+            print("[INFO]: Video sharing started.")
+
+    async def stop_video_share(self):
+        """Stop sharing video by stopping the keep_share coroutine and releasing resources."""
+        if self.camera_on:
+            self.camera_on = False
+            self.camera_stop_event.set()
+            if self.video_task:
+                self.video_task.cancel()
+                try:
+                    await self.video_task
+                except asyncio.CancelledError:
+                    print("[INFO]: Video sharing task cancelled successfully.")
+                except Exception as e:
+                    print(f"[Error]: Exception during video task cancellation: {e}")
+            self.video_task = None
+            if self.cap and self.cap.isOpened():
+                self.cap.release()
+                print("[INFO]: Camera released in stop_video_share.")
+            self.cap = None
+            self.frame = None
+            print("[INFO]: Video sharing stopped and resources released.")
+
+    async def start_screen_share(self):
+        """Start sharing screen by starting the keep_share coroutine."""
+        if not self.screen_on:
+            self.screen_on = True
+            self.screen_stop_event.clear()
+            self.screen_task = asyncio.create_task(
+                self.keep_share(
+                    data_type="screen",
+                    send_conn=self.meet_writer,
+                    capture_function=capture_screen,
+                    compress=compress_image,
+                    fps_or_frequency=30,
+                    stop_event=self.screen_stop_event,
+                )
+            )
+            print("[INFO]: Screen sharing started.")
+
+    async def stop_screen_share(self):
+        """Stop sharing screen by stopping the keep_share coroutine."""
+        if self.screen_on:
+            self.screen_on = False
+            self.screen_stop_event.set()
+            if self.screen_task:
+                self.screen_task.cancel()
+                try:
+                    await self.screen_task
+                except asyncio.CancelledError:
+                    print("[INFO]: Screen sharing task cancelled successfully.")
+                except Exception as e:
+                    print(f"[Error]: Exception during screen task cancellation: {e}")
+            self.screen_task = None
+            self.screen_frame = None
+            print("[INFO]: Screen sharing stopped.")
 
     async def keep_share(
-        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
+        self,
+        data_type,
+        send_conn,
+        capture_function,
+        compress=None,
+        fps_or_frequency=30,
+        stop_event=None,
     ):
         """
         Capture and send data based on the data type (video, audio).
         """
-        if data_type == "video":
-            compress = compress_image
-            while True:
-                frame = capture_function()
-                if frame is None:
-                    print("[Info]: No frame captured. Stopping video share.")
-                    break
+        try:
+            if data_type == "video":
+                while not stop_event.is_set():
+                    print("[INFO]: Capturing video frame")
+                    frame = capture_function()
+                    if frame is None:
+                        print("[Info]: No frame captured. Stopping video share.")
+                        break
 
-                success, encoded_image = cv2.imencode(".jpg", frame)
-                if not success:
-                    print("[Error]: Failed to encode frame.")
+                    success, encoded_image = cv2.imencode(".jpg", frame)
+                    if not success:
+                        print("[Error]: Failed to encode frame.")
+                        await asyncio.sleep(1 / fps_or_frequency)
+                        continue
+
+                    frame_bytes = encoded_image.tobytes()
+
+                    if compress:
+                        try:
+                            frame_bytes = compress(frame_bytes)
+                            if not isinstance(frame_bytes, bytes):
+                                print(
+                                    "[Error]: Compression function must return bytes."
+                                )
+                                await asyncio.sleep(1 / fps_or_frequency)
+                                continue
+                        except Exception as e:
+                            print(f"[Error]: Compression failed: {e}")
+                            await asyncio.sleep(1 / fps_or_frequency)
+                            continue
+
+                    data_type_byte = b"V"
+                    client_id_packed = struct.pack(">I", int(self.client_id))
+                    total_length = len(client_id_packed) + len(frame_bytes)
+                    length_packed = struct.pack(">I", total_length)
+                    send_conn.write(
+                        data_type_byte + length_packed + client_id_packed + frame_bytes
+                    )
+
+                    await send_conn.drain()
                     await asyncio.sleep(1 / fps_or_frequency)
-                    continue
 
-                frame_bytes = encoded_image.tobytes()
+            elif data_type == "audio":
+                while True:
+                    audio_data = capture_function()
+                    if audio_data is None:
+                        print("[Info]: No audio captured. Stopping audio share.")
+                        break
 
-                if compress:
-                    try:
-                        frame_bytes = compress(frame_bytes)
-                        if not isinstance(frame_bytes, bytes):
-                            print("[Error]: Compression function must return bytes.")
+                    # Optional compression
+                    if compress:
+                        try:
+                            audio_data = compress(audio_data)
+                            if not isinstance(audio_data, bytes):
+                                print(
+                                    "[Error]: Compression function must return bytes."
+                                )
+                                await asyncio.sleep(1 / fps_or_frequency)
+                                continue
+                        except Exception as e:
+                            print(f"[Error]: Compression failed: {e}")
                             await asyncio.sleep(1 / fps_or_frequency)
                             continue
-                    except Exception as e:
-                        print(f"[Error]: Compression failed: {e}")
-                        await asyncio.sleep(1 / fps_or_frequency)
-                        continue
 
-                data_type_byte = b"V"
-                client_id_packed = struct.pack(">I", int(self.client_id))
-                total_length = len(client_id_packed) + len(frame_bytes)
-                length_packed = struct.pack(">I", total_length)
-                send_conn.write(
-                    data_type_byte + length_packed + client_id_packed + frame_bytes
-                )
+                    data_type_byte = b"A"
+                    client_id_packed = struct.pack(">I", int(self.client_id))
+                    total_length = len(client_id_packed) + len(audio_data)
+                    length_packed = struct.pack(">I", total_length)
+                    send_conn.write(
+                        data_type_byte + length_packed + client_id_packed + audio_data
+                    )
 
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
-
-        elif data_type == "audio":
-            while True:
-                audio_data = capture_function()
-                if audio_data is None:
-                    print("[Info]: No audio captured. Stopping audio share.")
-                    break
-
-                # Optional compression
-                if compress:
-                    try:
-                        audio_data = compress(audio_data)
-                        if not isinstance(audio_data, bytes):
-                            print("[Error]: Compression function must return bytes.")
-                            await asyncio.sleep(1 / fps_or_frequency)
-                            continue
-                    except Exception as e:
-                        print(f"[Error]: Compression failed: {e}")
-                        await asyncio.sleep(1 / fps_or_frequency)
-                        continue
-
-                data_type_byte = b"A"
-                client_id_packed = struct.pack(">I", self.client_id)
-                total_length = len(client_id_packed) + len(audio_data)
-                length_packed = struct.pack(">I", total_length)
-                send_conn.write(
-                    data_type_byte + length_packed + client_id_packed + audio_data
-                )
-
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
-
-        elif data_type == "screen":
-            compress = compress_image
-            while True:
-                screen_frame = capture_function()
-                if screen_frame is None:
-                    print("[Info]: No screen captured. Stopping screen share.")
-                    break
-
-                success, encoded_image = cv2.imencode(".jpg", screen_frame)
-                if not success:
-                    print("[Error]: Failed to encode screen frame.")
+                    await send_conn.drain()
                     await asyncio.sleep(1 / fps_or_frequency)
-                    continue
 
-                screen_bytes = encoded_image.tobytes()
+            elif data_type == "screen":
+                while not stop_event.is_set():
+                    print("[INFO]: Capturing screen")
+                    screen = capture_function()
+                    if screen is None:
+                        print("[Info]: No screen captured. Stopping screen share.")
+                        break
 
-                if compress:
-                    try:
-                        screen_bytes = compress(screen_bytes)
-                        if not isinstance(screen_bytes, bytes):
-                            print("[Error]: Compression function must return bytes.")
-                            await asyncio.sleep(1 / fps_or_frequency)
-                            continue
-                    except Exception as e:
-                        print(f"[Error]: Compression failed: {e}")
+                    success, encoded_image = cv2.imencode(".jpg", screen)
+                    if not success:
+                        print("[Error]: Failed to encode screen.")
                         await asyncio.sleep(1 / fps_or_frequency)
                         continue
 
-                data_type_byte = b"S"
-                client_id_packed = struct.pack(">I", int(self.client_id))
-                total_length = len(client_id_packed) + len(screen_bytes)
-                length_packed = struct.pack(">I", total_length)
-                send_conn.write(
-                    data_type_byte + length_packed + client_id_packed + screen_bytes
-                )
+                    screen_bytes = encoded_image.tobytes()
 
-                await send_conn.drain()
-                await asyncio.sleep(1 / fps_or_frequency)
+                    if compress:
+                        try:
+                            screen_bytes = compress(screen_bytes)
+                            if not isinstance(screen_bytes, bytes):
+                                print(
+                                    "[Error]: Compression function must return bytes."
+                                )
+                                await asyncio.sleep(1 / fps_or_frequency)
+                                continue
+                        except Exception as e:
+                            print(f"[Error]: Compression failed: {e}")
+                            await asyncio.sleep(1 / fps_or_frequency)
+                            continue
 
-        else:
-            print(f"[Error]: Unsupported data type {data_type}")
+                    data_type_byte = b"S"
+                    client_id_packed = struct.pack(">I", int(self.client_id))
+                    total_length = len(client_id_packed) + len(screen_bytes)
+                    length_packed = struct.pack(">I", total_length)
+                    send_conn.write(
+                        data_type_byte + length_packed + client_id_packed + screen_bytes
+                    )
+
+                    await send_conn.drain()
+                    await asyncio.sleep(1 / fps_or_frequency)
+
+            else:
+                print(f"[Error]: Unsupported data type {data_type}")
+        except asyncio.CancelledError:
+            print("[INFO]: keep_share task received cancellation.")
+        except Exception as e:
+            print(f"[Error]: Exception in keep_share: {e}")
+        finally:
+            print("[INFO]: keep_share task has exited.")
+            if data_type == "video":
+                if self.cap and self.cap.isOpened():
+                    self.cap.release()
+                    print("[INFO]: Camera released in keep_share.")
+                self.frame = None
 
     async def keep_recv_main(self):
         """Receive messages from the server."""
@@ -363,9 +449,9 @@ class ConferenceClient:
                     print("[Error]: No data received for message payload.")
                     break
 
-                print(
-                    f"[DEBUG]: Received data type: {data_type}, Length: {message_length}"
-                )
+                # print(
+                #     f"[DEBUG]: Received data type: {data_type}, Length: {message_length}"
+                # )
 
                 if data_type == "T":  # Text
                     try:
@@ -409,17 +495,8 @@ class ConferenceClient:
                         frame = cv2.imdecode(frame_np, cv2.IMREAD_COLOR)
 
                         if frame is not None:
-                            if client_id not in self.video_windows:
-                                window_name = f"Video - Client {client_id}"
-                                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-                                self.video_windows[client_id] = window_name
-                                print(f"[INFO]: Created window for Client {client_id}")
-
-                            window_name = self.video_windows[client_id]
-                            cv2.imshow(window_name, frame)
-                            if cv2.waitKey(10) & 0xFF == ord("q"):
-                                print("[INFO]: Quitting video display.")
-                                break
+                            self.frame = frame
+                            print(f"[INFO]: Received frame from Client {client_id}")
                         else:
                             print("[Error]: Failed to decode video frame.")
                     except Exception as e:
@@ -464,27 +541,14 @@ class ConferenceClient:
                             continue
 
                     try:
-                        if message_length < 4:
-                            print("[Error]: Incomplete screen frame received.")
-                            continue
-
                         screen_np = np.frombuffer(message_data, dtype=np.uint8)
                         screen_frame = cv2.imdecode(screen_np, cv2.IMREAD_COLOR)
 
                         if screen_frame is not None:
-                            if client_id not in self.screen_windows:
-                                window_name = f"Screen - Client {client_id}"
-                                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-                                self.screen_windows[client_id] = window_name
-                                print(
-                                    f"[INFO]: Created window for Screen of Client {client_id}"
-                                )
-
-                            window_name = self.screen_windows[client_id]
-                            cv2.imshow(window_name, screen_frame)
-                            if cv2.waitKey(1) & 0xFF == ord("q"):
-                                print("[INFO]: Quitting screen display.")
-                                break
+                            self.screen_frame = screen_frame
+                            print(
+                                f"[INFO]: Received screen frame from Client {client_id}"
+                            )
                         else:
                             print("[Error]: Failed to decode screen frame.")
                     except Exception as e:
@@ -492,7 +556,7 @@ class ConferenceClient:
 
                 else:
                     print(f"[Error]: Unsupported data type {data_type}")
-            await asyncio.sleep(0.01)
+                await asyncio.sleep(0.01)
         except asyncio.IncompleteReadError:
             print("[Error]: Connection closed by the server.")
             self.on_meeting = False
@@ -505,8 +569,6 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error]: Exception in keep_recv: {e}")
         finally:
-            # Cleanup resources
-            cv2.destroyAllWindows()
             streamout.stop_stream()
             streamout.close()
             print("[INFO]: Receiver connection closed.")
@@ -544,6 +606,95 @@ class ConferenceClient:
             f"[INFO]: Sent message from {self.client_id} at {message_dict['timestamp']}"
         )
 
+    async def receive_command(self):
+        while True:
+            await asyncio.sleep(0.5)
+            recognized = True
+            if self.input is not None:
+                fields = self.input.split(maxsplit=1)
+                if len(fields) == 1:
+                    if self.input in ("?", "？"):
+                        print(HELP)
+                    elif self.input == "create":
+                        if not self.on_meeting:
+                            await self.send_to_main("create")
+                            pass
+                        else:
+                            print("You are already in a conference")
+                    elif self.input == "quit":
+                        if self.on_meeting:
+                            await self.send_to_main("quit")
+                        else:
+                            print("You are not in any conference")
+                    elif self.input == "cancel":
+                        if self.is_owner:
+                            await self.cancel_conference()
+                        else:
+                            print("You cannot cancel the conference")
+                    elif self.input == "list":
+                        await self.send_to_main("list")
+                        pass
+                    else:
+                        recognized = False
+                elif len(fields) == 2:
+                    if fields[0] == "join":
+                        if self.on_meeting:
+                            print("You are already in a conference")
+                        else:
+                            input_conf_id = fields[1]
+                            if input_conf_id.isdigit():
+                                await self.send_to_main(f"join {input_conf_id}")
+                            else:
+                                print(
+                                    "[Warn]: Input conference ID must be in digital form"
+                                )
+                    elif fields[0] == "send":
+                        message = fields[1]
+                        await self.send_to_meet(message)
+                    elif fields[0] == "camera":
+                        if fields[1] == "on":
+                            await self.start_video_share()
+                        elif fields[1] == "off":
+                            await self.stop_video_share()
+                    elif fields[0] == "audio":
+                        if fields[1] == "on":
+                            await self.keep_share(
+                                "audio",
+                                self.meet_writer,
+                                capture_voice,
+                                compress=None,
+                                fps_or_frequency=120,
+                            )
+                        elif fields[1] == "off":
+                            pass  ##
+                    elif fields[0] == "screen":
+                        if fields[1] == "on":
+                            await self.start_screen_share()
+                        elif fields[1] == "off":
+                            await self.stop_screen_share()
+                    else:
+                        recognized = False
+                else:
+                    recognized = False
+
+                self.input = None
+                if not recognized:
+                    print(f"[Warn]: Unrecognized input {self.input}")
+
+                if not self.message_queue.empty():
+                    await self.message_queue.get()
+                    await asyncio.sleep(0.1)
+
+    async def start(self):
+        """
+        Execute functions based on the command line input.
+        """
+        connected = await self.connect_to_server()
+        if not connected:
+            return
+
+        await asyncio.gather(self.receive_command(), self.keep_recv_main())
+
     async def connect_to_server(self):
         """Connect to the server using asyncio."""
         try:
@@ -555,109 +706,6 @@ class ConferenceClient:
             print(f"Failed to connect to server: {e}")
             return False
         return True
-
-    async def receive_command(self):
-        while True:
-            await asyncio.sleep(0.5)
-            if not self.on_meeting:
-                status = "Free"
-            else:
-                status = f"OnMeeting-{self.conference_id}"
-            recognized = True
-            cmd_input = await aioconsole.ainput(
-                f'({status}) Please enter a operation (enter "?" to help): '
-            )
-            cmd_input = cmd_input.strip().lower()
-            fields = cmd_input.split(maxsplit=1)
-            if len(fields) == 1:
-                if cmd_input in ("?", "？"):
-                    print(HELP)
-                elif cmd_input == "create":
-                    if not self.on_meeting:
-                        await self.send_to_main("create")
-                        pass
-                    else:
-                        print("You are already in a conference")
-                elif cmd_input == "quit":
-                    if self.on_meeting:
-                        await self.send_to_main("quit")
-                    else:
-                        print("You are not in any conference")
-                elif cmd_input == "cancel":
-                    if self.on_meeting:
-                        if self.is_owner:
-                            await self.cancel_conference()
-                        else:
-                            print("You cannot cancel the conference")
-                    else:
-                        print("You are not in any conference")
-                elif cmd_input == "list":
-                    await self.send_to_main("list")
-                    pass
-                else:
-                    recognized = False
-            elif len(fields) == 2:
-                if fields[0] == "join":
-                    if self.on_meeting:
-                        print("You are already in a conference")
-                    else:
-                        input_conf_id = fields[1]
-                        if input_conf_id.isdigit():
-                            await self.send_to_main(f"join {input_conf_id}")
-                        else:
-                            print("[Warn]: Input conference ID must be in digital form")
-                elif fields[0] == "send":
-                    if self.on_meeting:
-                        message = fields[1]
-                        await self.send_to_meet(message)
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "camera":
-                    if self.on_meeting:
-                        if fields[1] == "on":
-                            await self.share_switch("video")
-                        elif fields[1] == "off":
-                            self.camera_on = False
-                            stop_camera()  ## to be implemented and tested
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "audio":
-                    if self.on_meeting:
-                        if fields[1] == "on":
-                            await self.share_switch("audio")
-                        elif fields[1] == "off":
-                            pass  ##
-                    else:
-                        print('You are not in any conference')
-                elif fields[0] == "screen":
-                    if self.on_meeting:
-                        if fields[1] == "on":
-                            await self.share_switch("screen")
-                        elif fields[1] == "off":
-                            pass  ##
-                    else:
-                        print('You are not in any conference')
-                else:
-                    recognized = False
-            else:
-                recognized = False
-
-            if not recognized:
-                print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
-
-            if not self.message_queue.empty():
-                await self.message_queue.get()
-                await asyncio.sleep(0.1)
-
-    async def start(self):
-        """
-        Execute functions based on the command line input.
-        """
-        connected = await self.connect_to_server()
-        if not connected:
-            return
-
-        await asyncio.gather(self.receive_command(), self.keep_recv_main())
 
 
 if __name__ == "__main__":

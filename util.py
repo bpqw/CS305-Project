@@ -12,34 +12,6 @@ import numpy as np
 from PIL import Image, ImageGrab
 from config import *
 
-cap = cv2.VideoCapture(0)
-if cap.isOpened():
-    can_capture_camera = True
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
-else:
-    can_capture_camera = False
-
-
-def capture_camera():
-    ret, frame = cap.read()
-    if not ret:
-        raise Exception("Fail to capture frame from camera")
-    return frame
-
-
-def stop_camera():
-    """
-    Stop the camera capture and release the resources.
-    """
-    global cap
-    if cap.isOpened():
-        cap.release()
-        cv2.destroyAllWindows()
-        print("Camera capture stopped and resources released.")
-    else:
-        print("Camera is not open. No resources to release.")
-
 
 def compress_image(data):
     """
@@ -143,13 +115,6 @@ def capture_screen():
     except Exception as e:
         print(f"[Error]: Failed to capture screen: {e}")
         return None
-
-
-def stop_screen():
-    """
-    Stop the screen capture and release the resources.
-    """
-    print("Screen capture stopped.")
 
 
 my_screen_size = pyautogui.size()

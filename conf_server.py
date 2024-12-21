@@ -158,11 +158,6 @@ class ConferenceServer:
         except Exception as e:
             print(f"Error sending message: {e}")
 
-    # async def log(self):
-    # while self.running:
-    #     print("Something about server status")
-    #     await asyncio.sleep(LOG_INTERVAL)
-
     async def cancel_conference(self):
         """
         handle cancel conference request: disconnect all connections to cancel the conference
@@ -316,8 +311,6 @@ class MainServer:
             elif len(field) == 2:
                 if field[0] == "join":
                     await self.handle_join_conference(field[1], writer)
-                # elif field[0] == "switch":
-                #
                 elif field[0] == "cancel":
                     await self.handle_cancel_conference(field[1], writer)
                 else:
