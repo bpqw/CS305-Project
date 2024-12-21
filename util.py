@@ -28,6 +28,19 @@ def capture_camera():
     return frame
 
 
+def stop_camera():
+    """
+    Stop the camera capture and release the resources.
+    """
+    global cap
+    if cap.isOpened():
+        cap.release()
+        cv2.destroyAllWindows()
+        print("Camera capture stopped and resources released.")
+    else:
+        print("Camera is not open. No resources to release.")
+
+
 def compress_image(data):
     """
     Compress bytes using zlib.
@@ -51,16 +64,6 @@ def decompress_image(compressed_data):
     except Exception as e:
         print(f"[Error]: Decompression error: {e}")
         return compressed_data
-
-
-def stop_camera(self):
-    """
-    Stop the camera capture and release the resources.
-    """
-    if cap is not None:
-        cap.release()
-        cap = None
-        print("[INFO]: Camera turned off.")
 
 
 # audio setting
@@ -97,40 +100,32 @@ def capture_voice():
         return None
 
 
-# def compress_image(image, format="JPEG", quality=85):
-#     """
-#     compress image and output Bytes
+def stop_voice():
+    """
+    Stop the voice capture and release the resources.
+    """
+    global streamin, streamout, audio
 
-#     :param image: PIL.Image, input image
-#     :param format: str, output format ('JPEG', 'PNG', 'WEBP', ...)
-#     :param quality: int, compress quality (0-100), 85 default
-#     :return: bytes, compressed image data
-#     """
-#     img_byte_arr = BytesIO()
-#     image.save(img_byte_arr, format=format, quality=quality)
-#     img_byte_arr = img_byte_arr.getvalue()
+    try:
+        if streamin.is_active():
+            streamin.stop_stream()
+        streamin.close()
+    except Exception as e:
+        print(f"[Error]: Failed to stop or close input stream: {e}")
 
-#     return img_byte_arr
+    try:
+        if streamout.is_active():
+            streamout.stop_stream()
+        streamout.close()
+    except Exception as e:
+        print(f"[Error]: Failed to stop or close output stream: {e}")
 
+    try:
+        audio.terminate()
+    except Exception as e:
+        print(f"[Error]: Failed to terminate PyAudio: {e}")
 
-# def decompress_image(image_bytes):
-#     """
-#     Decompress image bytes and return them as raw JPEG bytes suitable for cv2.imdecode.
-#     :param image_bytes: bytes representing compressed image data
-#     :return: bytes representing a JPEG-encoded image
-#     """
-#     try:
-#         # Load the image from bytes using PIL
-#         img_byte_arr = io.BytesIO(image_bytes)
-#         image = Image.open(img_byte_arr).convert("RGB")  # Ensure RGB format
-
-#         # Re-encode the image as JPEG and return the raw bytes
-#         out_byte_arr = io.BytesIO()
-#         image.save(out_byte_arr, format="JPEG")
-#         return out_byte_arr.getvalue()
-#     except Exception as e:
-#         print(f"[Error]: Decompression error: {e}")
-#         return image_bytes
+    print("Voice capture stopped and resources released.")
 
 
 def capture_screen():
@@ -150,11 +145,11 @@ def capture_screen():
         return None
 
 
-# def capture_screen():
-#     # capture screen with the resolution of display
-#     # img = pyautogui.screenshot()
-#     img = ImageGrab.grab()
-#     return img
+def stop_screen():
+    """
+    Stop the screen capture and release the resources.
+    """
+    print("Screen capture stopped.")
 
 
 my_screen_size = pyautogui.size()
