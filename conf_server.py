@@ -125,6 +125,8 @@ class ConferenceServer:
         tasks = []
         for client in self.clients_conns:
             writer = self.clients_conns[client][1]
+            if data_type == "A" and writer == sender_writer:
+                continue
             task = asyncio.create_task(
                 self.one_of_broadcast(writer, data_type, payload, is_text)
             )
