@@ -38,6 +38,9 @@ class ConferenceClient:
         self.camera_stop_event = asyncio.Event()
 
         # Audio related
+        self.audio_on = False
+        self.audio_task = None
+        self.audio_stop_event = asyncio.Event()
 
         # Screen related
         self.screen_on = False
@@ -192,6 +195,39 @@ class ConferenceClient:
             self.frame = None
             print("[INFO]: Video sharing stopped and resources released.")
 
+    async def start_audio_share(self):
+        """Start sharing audio by initializing audio capture and starting the keep_share coroutine."""
+        if not self.audio_on:
+            self.audio_on = True
+            self.audio_stop_event.clear()
+            self.audio_task = asyncio.create_task(
+                self.keep_share(
+                    data_type="audio",
+                    send_conn=self.meet_writer,
+                    capture_function=capture_voice,
+                    compress=None,
+                    fps_or_frequency=120,
+                    stop_event=self.audio_stop_event,
+                )
+            )
+            print("[INFO]: Audio sharing started.")
+
+    async def stop_audio_share(self):
+        """Stop sharing audio by stopping the keep_share coroutine."""
+        if self.audio_on:
+            self.audio_on = False
+            self.audio_stop_event.set()
+            if self.audio_task:
+                self.audio_task.cancel()
+                try:
+                    await self.audio_task
+                except asyncio.CancelledError:
+                    print("[INFO]: Audio sharing task cancelled successfully.")
+                except Exception as e:
+                    print(f"[Error]: Exception during audio task cancellation: {e}")
+            self.audio_task = None
+            print("[INFO]: Audio sharing stopped.")
+
     async def start_screen_share(self):
         """Start sharing screen by starting the keep_share coroutine."""
         if not self.screen_on:
@@ -281,7 +317,7 @@ class ConferenceClient:
                     await asyncio.sleep(1 / fps_or_frequency)
 
             elif data_type == "audio":
-                while True:
+                while not stop_event.is_set():
                     audio_data = capture_function()
                     if audio_data is None:
                         print("[Info]: No audio captured. Stopping audio share.")
@@ -292,9 +328,7 @@ class ConferenceClient:
                         try:
                             audio_data = compress(audio_data)
                             if not isinstance(audio_data, bytes):
-                                print(
-                                    "[Error]: Compression function must return bytes."
-                                )
+                                print("[Error]: Compression function must return bytes.")
                                 await asyncio.sleep(1 / fps_or_frequency)
                                 continue
                         except Exception as e:
@@ -657,15 +691,9 @@ class ConferenceClient:
                             await self.stop_video_share()
                     elif fields[0] == "audio":
                         if fields[1] == "on":
-                            await self.keep_share(
-                                "audio",
-                                self.meet_writer,
-                                capture_voice,
-                                compress=None,
-                                fps_or_frequency=120,
-                            )
+                            await self.start_audio_share()
                         elif fields[1] == "off":
-                            pass  ##
+                            await self.stop_audio_share()
                     elif fields[0] == "screen":
                         if fields[1] == "on":
                             await self.start_screen_share()
