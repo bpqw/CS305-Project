@@ -1,5 +1,4 @@
 import io
-import cv2
 import sys
 import asyncio
 from conf_client import ConferenceClient
@@ -79,11 +78,6 @@ class ConsoleMonitorThread(QThread):
             if output:
                 self.console_output.emit(output)
             self.msleep(1)  # 每100毫秒检查一次
-
-    def stop(self):
-        """Stop the thread."""
-        self.running = False
-        self.wait()
 
 
 class VideoConferenceApp(QWidget):
@@ -229,10 +223,13 @@ class BaseMeetingRoom(QWidget):
         self.console_thread = ConsoleMonitorThread(self.console_capture)  # 创建监控线程
         self.console_thread.console_output.connect(self.appendText)  # 连接信号
         self.console_thread.start()  # 启动线程
-        self.video_thread = None
-        self.screen_thread = None
-        # self.video_thread = self.start_video_thread()
-        # self.screen_thread = self.start_screen_thread()
+
+        self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
+        self.video_thread.change_pixmap_signal.connect(self.update_video)
+        self.video_thread.start()
+        self.screen_thread = ScreenThread(self.client)
+        self.screen_thread.change_pixmap_signal.connect(self.update_video)
+        self.screen_thread.start()
 
     def initUI(self):
         self.setWindowTitle(self.get_window_title())
@@ -398,67 +395,46 @@ class BaseMeetingRoom(QWidget):
             print("开启麦克风按钮被点击")
             self.client.input = "audio on"
             self.mic_btn.setText("关闭麦克风")
-            self.appendText("麦克风已开启")  # 仅用于证明文本框有效
         else:
             print("关闭麦克风按钮被点击")
             self.client.input = "audio off"
             self.mic_btn.setText("开启麦克风")
-            self.appendText("麦克风已关闭")
 
     def onCamClick(self):
         if self.cam_btn.text() == "开启摄像头":
             print("开启摄像头按钮被点击")
             self.client.input = "camera on"
             self.cam_btn.setText("关闭摄像头")
-            self.start_video_thread()
         else:
             print("关闭摄像头按钮被点击")
             self.client.input = "camera off"
             self.cam_btn.setText("开启摄像头")
-            self.stop_video_thread()
 
-    def start_video_thread(self):
-        """Start the VideoThread to display video frames."""
-        self.video_thread = VideoThread(self.client)
-        self.video_thread.change_pixmap_signal.connect(self.update_video)
-        self.video_thread.start()
-        print("[INFO]: VideoThread started.")
-
-    def stop_video_thread(self):
-        """Stop the VideoThread and clear the video label."""
-        if self.video_thread is not None:
-            self.video_thread.stop()
-            self.video_thread = None
-            self.video_label.clear()
-            print("[INFO]: VideoThread stopped and video label cleared.")
+    # def stop_video_thread(self):
+    #     """Stop the VideoThread and clear the video label."""
+    #     if self.video_thread is not None:
+    #         self.video_thread.stop()
+    #         self.video_thread = None
+    #         self.video_label.clear()
+    #         print("[INFO]: VideoThread stopped and video label cleared.")
 
     def onScreenClick(self):
         if self.screen_btn.text() == "共享屏幕":
             print("共享屏幕按钮被点击")
             self.client.input = "screen on"
             self.screen_btn.setText("停止共享")
-            self.start_screen_thread()
         else:
             print("停止共享按钮被点击")
             self.client.input = "screen off"
             self.screen_btn.setText("共享屏幕")
-            self.stop_screen_thread()
 
-    def start_screen_thread(self):
-        """Start the ScreenThread to display screen frames."""
-        if self.screen_thread is None:
-            self.screen_thread = ScreenThread(self.client)
-            self.screen_thread.change_pixmap_signal.connect(self.update_video)
-            self.screen_thread.start()
-            print("[INFO]: ScreenThread started.")
-
-    def stop_screen_thread(self):
-        """Stop the ScreenThread and clear the video label."""
-        if self.screen_thread is not None:
-            self.screen_thread.stop()
-            self.screen_thread = None
-            self.video_label.clear()
-            print("[INFO]: ScreenThread stopped and video label cleared.")
+    # def stop_screen_thread(self):
+    #     """Stop the ScreenThread and clear the video label."""
+    #     if self.screen_thread is not None:
+    #         self.screen_thread.stop()
+    #         self.screen_thread = None
+    #         self.video_label.clear()
+    #         print("[INFO]: ScreenThread stopped and video label cleared.")
 
     def appendText(self, text):
         # 预留方法，用于将接收到的信息添加到文本框中
@@ -473,22 +449,6 @@ class BaseMeetingRoom(QWidget):
         if input_text:  # 空文本不做处理
             self.client.input = "send " + input_text
             self.input_edit.clear()  # 清空输入框
-
-    def closeEvent(self, event):
-        """Handle the window close event to stop threads and sharing."""
-        if hasattr(self.client, "stop_video_share") and self.client.stop_video_share:
-            asyncio.create_task(self.client.stop_video_share())
-        if hasattr(self.client, "stop_screen_share") and self.client.stop_screen_share:
-            asyncio.create_task(self.client.stop_screen_share())
-
-        self.stop_video_thread()
-        self.stop_screen_thread()
-
-        if self.console_thread.isRunning():
-            self.console_thread.stop()
-            self.console_thread.wait()
-
-        event.accept()
 
 
 # 会议室（创建者版本）
