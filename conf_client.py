@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import struct
 import json
-import cv2
 import numpy as np
 from util import *
 from config import *

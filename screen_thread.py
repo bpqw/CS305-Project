@@ -23,9 +23,7 @@ class ScreenThread(QThread):
                 self.change_pixmap_signal.emit(image)
                 self.frame_provider.screen_frame = None
             else:
-                blank_image = QImage(640, 480, QImage.Format_RGB888)
-                blank_image.fill(Qt.black)
-                self.change_pixmap_signal.emit(blank_image)
+                self.error_signal.emit("No frame available")
             self.msleep(10)  # Sleep for 10ms to prevent high CPU usage
 
     def stop(self):

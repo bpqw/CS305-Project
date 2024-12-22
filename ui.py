@@ -227,9 +227,9 @@ class BaseMeetingRoom(QWidget):
         self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
         self.video_thread.change_pixmap_signal.connect(self.update_video)
         self.video_thread.start()
-        self.screen_thread = ScreenThread(self.client)
-        self.screen_thread.change_pixmap_signal.connect(self.update_video)
-        self.screen_thread.start()
+        # self.screen_thread = ScreenThread(self.client)
+        # self.screen_thread.change_pixmap_signal.connect(self.update_video)
+        # self.screen_thread.start()
 
     def initUI(self):
         self.setWindowTitle(self.get_window_title())
@@ -410,14 +410,6 @@ class BaseMeetingRoom(QWidget):
             self.client.input = "camera off"
             self.cam_btn.setText("开启摄像头")
 
-    # def stop_video_thread(self):
-    #     """Stop the VideoThread and clear the video label."""
-    #     if self.video_thread is not None:
-    #         self.video_thread.stop()
-    #         self.video_thread = None
-    #         self.video_label.clear()
-    #         print("[INFO]: VideoThread stopped and video label cleared.")
-
     def onScreenClick(self):
         if self.screen_btn.text() == "共享屏幕":
             print("共享屏幕按钮被点击")
@@ -427,14 +419,6 @@ class BaseMeetingRoom(QWidget):
             print("停止共享按钮被点击")
             self.client.input = "screen off"
             self.screen_btn.setText("共享屏幕")
-
-    # def stop_screen_thread(self):
-    #     """Stop the ScreenThread and clear the video label."""
-    #     if self.screen_thread is not None:
-    #         self.screen_thread.stop()
-    #         self.screen_thread = None
-    #         self.video_label.clear()
-    #         print("[INFO]: ScreenThread stopped and video label cleared.")
 
     def appendText(self, text):
         # 预留方法，用于将接收到的信息添加到文本框中
