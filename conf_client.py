@@ -209,7 +209,7 @@ class ConferenceClient:
                 print("[INFO]: Camera released in stop_video_share.")
             self.cap = None
             self.frame = None
-            cv2.destroyWindow("Video " + str(self.client_id))
+            # cv2.destroyWindow("Video " + str(self.client_id))
             print("[INFO]: Video sharing stopped and resources released.")
 
     async def start_audio_share(self):
@@ -279,7 +279,7 @@ class ConferenceClient:
                     print(f"[Error]: Exception during screen task cancellation: {e}")
             self.screen_task = None
             self.screen_frame = None
-            cv2.destroyWindow("Screen " + str(self.client_id))
+            # cv2.destroyWindow("Screen " + str(self.client_id))
             print("[INFO]: Screen sharing stopped.")
 
     async def keep_share(
@@ -515,10 +515,18 @@ class ConferenceClient:
                         client_id = text_message.get("client_id", "Unknown")
                         timestamp = text_message.get("timestamp", "Unknown")
                         message = text_message.get("message", "")
-                        if message == "close_video":
-                            cv2.destroyWindow("Video " + str(self.client_id))
-                        elif message == "close_screen":
-                            cv2.destroyWindow("Screen " + str(self.client_id))
+                        if "close_video" in message:
+                            while True:
+                                try:
+                                    cv2.destroyWindow("Video " + str(self.client_id))
+                                except cv2.error:
+                                    break
+                        elif "close_screen" in message:
+                            while True:
+                                try:
+                                    cv2.destroyWindow("Screen " + str(self.client_id))
+                                except cv2.error:
+                                    break
                         else:
                             print(f"[{timestamp}] {client_id}: {message}")
                             await self.message_queue.put(
