@@ -226,11 +226,11 @@ class BaseMeetingRoom(QWidget):
         self.console_thread.console_output.connect(self.appendText)  # 连接信号
         self.console_thread.start()  # 启动线程
 
-        self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
-        self.video_thread.change_pixmap_signal_1.connect(self.update_video_1)
-        self.video_thread.change_pixmap_signal_2.connect(self.update_video_2)
-        self.video_thread.change_pixmap_signal_3.connect(self.update_video_3)
-        self.video_thread.start()
+        # self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
+        # self.video_thread.change_pixmap_signal_1.connect(self.update_video_1)
+        # self.video_thread.change_pixmap_signal_2.connect(self.update_video_2)
+        # self.video_thread.change_pixmap_signal_3.connect(self.update_video_3)
+        # self.video_thread.start()
 
         # self.screen_thread = ScreenThread(self.client)
         # self.screen_thread.change_pixmap_signal.connect(self.update_screen)
@@ -281,7 +281,7 @@ class BaseMeetingRoom(QWidget):
     def get_window_title(self):
         """Return the window title based on room type."""
         if self.room_type == "creator":
-            return "用户" + self.client.client_id + "的视频会议房间(房主)"
+            return "用户" + self.client.client_id + "的视频会议房间 (房主)"
         else:
             return "用户" + self.client.client_id + "的视频会议房间（成员）"
 
@@ -452,7 +452,7 @@ class BaseMeetingRoom(QWidget):
             if (
                 not message.startswith("[DEBUG]")
                 and not message.startswith("[INFO]")
-                and message.startswith("[")
+                # and message.startswith("[")
             ):
                 self.info_text_edit.append(message)
 

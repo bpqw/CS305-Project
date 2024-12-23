@@ -36,6 +36,10 @@ class ConferenceClient:
         self.frame_1 = None
         self.frame_2 = None
         self.frame_3 = None
+        self.frame_4 = None
+        self.frame_5 = None
+        self.frame_6 = None
+
         self.video_task = None
         self.camera_stop_event = asyncio.Event()
 
@@ -49,6 +53,10 @@ class ConferenceClient:
         self.screen_frame_1 = None
         self.screen_frame_2 = None
         self.screen_frame_3 = None
+        self.screen_frame_4 = None
+        self.screen_frame_5 = None
+        self.screen_frame_6 = None
+
         self.screen_task = None
         self.screen_stop_event = asyncio.Event()
 
@@ -197,6 +205,7 @@ class ConferenceClient:
                 print("[INFO]: Camera released in stop_video_share.")
             self.cap = None
             self.frame = None
+            cv2.destroyWindow("Video " + str(self.client_id))
             print("[INFO]: Video sharing stopped and resources released.")
 
     async def start_audio_share(self):
@@ -264,6 +273,7 @@ class ConferenceClient:
                     print(f"[Error]: Exception during screen task cancellation: {e}")
             self.screen_task = None
             self.screen_frame = None
+            cv2.destroyWindow("Screen " + str(self.client_id))
             print("[INFO]: Screen sharing stopped.")
 
     async def keep_share(
@@ -332,7 +342,9 @@ class ConferenceClient:
                         try:
                             audio_data = compress(audio_data)
                             if not isinstance(audio_data, bytes):
-                                print("[Error]: Compression function must return bytes.")
+                                print(
+                                    "[Error]: Compression function must return bytes."
+                                )
                                 await asyncio.sleep(1 / fps_or_frequency)
                                 continue
                         except Exception as e:
@@ -534,11 +546,27 @@ class ConferenceClient:
                         if frame is not None:
                             if client_id == 1:
                                 self.frame_1 = frame
+                                cv2.imshow("Video 1", self.frame_1)
                             elif client_id == 2:
                                 self.frame_2 = frame
+                                cv2.imshow("Video 2", self.frame_2)
                             elif client_id == 3:
                                 self.frame_3 = frame
-                            print(f"[INFO]: Received frame from Client {client_id}")
+                                cv2.imshow("Video 3", self.frame_3)
+                            elif client_id == 4:
+                                self.frame_4 = frame
+                                cv2.imshow("Video 4", self.frame_4)
+                            elif client_id == 5:
+                                self.frame_5 = frame
+                                cv2.imshow("Video 5", self.frame_5)
+                            elif client_id == 6:
+                                self.frame_6 = frame
+                                cv2.imshow("Video 6", self.frame_6)
+
+                            key = cv2.waitKey(1)  # 1ms delay for window update
+                            if key == ord("q"):  # Press 'q' to close the window
+                                cv2.destroyWindow("Video " + str(self.client_id))
+                                break
                         else:
                             print("[Error]: Failed to decode video frame.")
                     except Exception as e:
@@ -589,13 +617,27 @@ class ConferenceClient:
                         if screen_frame is not None:
                             if client_id == 1:
                                 self.screen_frame_1 = screen_frame
+                                cv2.imshow("Screen 1", self.screen_frame_1)
                             elif client_id == 2:
                                 self.screen_frame_2 = screen_frame
+                                cv2.imshow("Screen 2", self.screen_frame_2)
                             elif client_id == 3:
                                 self.screen_frame_3 = screen_frame
-                            print(
-                                f"[INFO]: Received screen frame from Client {client_id}"
-                            )
+                                cv2.imshow("Screen 3", self.screen_frame_3)
+                            elif client_id == 4:
+                                self.screen_frame_4 = screen_frame
+                                cv2.imshow("Screen 4", self.screen_frame_4)
+                            elif client_id == 5:
+                                self.screen_frame_5 = screen_frame
+                                cv2.imshow("Screen 5", self.screen_frame_5)
+                            elif client_id == 6:
+                                self.screen_frame_6 = screen_frame
+                                cv2.imshow("Screen 6", self.screen_frame_6)
+
+                            key = cv2.waitKey(1)  # 1ms delay for window update
+                            if key == ord("q"):  # Press 'q' to close the window
+                                cv2.destroyWindow("Screen " + str(self.client_id))
+                                break
                         else:
                             print("[Error]: Failed to decode screen frame.")
                     except Exception as e:
