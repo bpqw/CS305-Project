@@ -181,7 +181,7 @@ class ConferenceClient:
                     send_conn=self.meet_writer,
                     capture_function=self.capture_frame,
                     compress=compress_image,
-                    fps_or_frequency=24,
+                    fps_or_frequency=15,
                     stop_event=self.camera_stop_event,
                 )
             )
