@@ -4,9 +4,10 @@ from PyQt5.QtCore import pyqtSignal, QThread, Qt
 from PyQt5.QtGui import QImage, QPainter, QFont
 
 
-# 视频流获取线程（用Video_play)改造的，赞！
 class VideoThread(QThread):
-    change_pixmap_signal = pyqtSignal(QImage)
+    change_pixmap_signal_1 = pyqtSignal(QImage)
+    change_pixmap_signal_2 = pyqtSignal(QImage)
+    change_pixmap_signal_3 = pyqtSignal(QImage)
     error_signal = pyqtSignal(str)
 
     def __init__(self, frame_provider):
@@ -17,19 +18,49 @@ class VideoThread(QThread):
 
     def run(self):
         while self.running:
-            current_time = time.time()
+            current_time_1 = time.time()
             if (
-                hasattr(self.frame_provider, "frame")
-                and self.frame_provider.frame is not None
+                hasattr(self.frame_provider, "frame_1")
+                and self.frame_provider.frame_1 is not None
             ):
-                frame = self.frame_provider.frame
+                frame = self.frame_provider.frame_1
                 image = self.convert_cv_qt(frame)
-                self.change_pixmap_signal.emit(image)
-                self.frame_provider.frame = None  # 重置frame
-                self.last_frame_time = current_time  # Update last frame time
-            elif current_time - self.last_frame_time > 0.1:  # No frame for >100ms
+                self.change_pixmap_signal_1.emit(image)
+                self.frame_provider.frame_1 = None  # 重置frame
+                self.last_frame_time = current_time_1  # Update last frame time
+            elif current_time_1 - self.last_frame_time > 0.1:  # No frame for >100ms
                 placeholder_image = self.create_placeholder_image(640, 480, "No Video")
-                self.change_pixmap_signal.emit(placeholder_image)
+                self.change_pixmap_signal_1.emit(placeholder_image)
+            self.msleep(10)  # Sleep for 10ms to prevent high CPU usage
+
+            current_time_2 = time.time()
+            if (
+                hasattr(self.frame_provider, "frame_2")
+                and self.frame_provider.frame_2 is not None
+            ):
+                frame = self.frame_provider.frame_2
+                image = self.convert_cv_qt(frame)
+                self.change_pixmap_signal_2.emit(image)
+                self.frame_provider.frame_2 = None  # 重置frame
+                self.last_frame_time = current_time_2  # Update last frame time
+            elif current_time_2 - self.last_frame_time > 0.1:  # No frame for >100ms
+                placeholder_image = self.create_placeholder_image(640, 480, "No Video")
+                self.change_pixmap_signal_2.emit(placeholder_image)
+            self.msleep(10)  # Sleep for 10ms to prevent high CPU usage
+
+            current_time_3 = time.time()
+            if (
+                hasattr(self.frame_provider, "frame_3")
+                and self.frame_provider.frame_3 is not None
+            ):
+                frame = self.frame_provider.frame_3
+                image = self.convert_cv_qt(frame)
+                self.change_pixmap_signal_3.emit(image)
+                self.frame_provider.frame_3 = None  # 重置frame
+                self.last_frame_time = current_time_3  # Update last frame time
+            elif current_time_3 - self.last_frame_time > 0.1:  # No frame for >100ms
+                placeholder_image = self.create_placeholder_image(640, 480, "No Video")
+                self.change_pixmap_signal_3.emit(placeholder_image)
             self.msleep(10)  # Sleep for 10ms to prevent high CPU usage
 
     def stop(self):

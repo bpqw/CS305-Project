@@ -217,6 +217,8 @@ class BaseMeetingRoom(QWidget):
     def __init__(self, client, room_type):
         super().__init__()
         self.client = client
+        self.client.client_id = client.client_id
+        self.current_id = 0
         self.room_type = room_type
         self.initUI()
         self.console_capture = ConsoleOutputCapture()  # 创建控制台输出捕获实例
@@ -225,10 +227,13 @@ class BaseMeetingRoom(QWidget):
         self.console_thread.start()  # 启动线程
 
         self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
-        self.video_thread.change_pixmap_signal.connect(self.update_video)
+        self.video_thread.change_pixmap_signal_1.connect(self.update_video_1)
+        self.video_thread.change_pixmap_signal_2.connect(self.update_video_2)
+        self.video_thread.change_pixmap_signal_3.connect(self.update_video_3)
         self.video_thread.start()
+
         # self.screen_thread = ScreenThread(self.client)
-        # self.screen_thread.change_pixmap_signal.connect(self.update_video)
+        # self.screen_thread.change_pixmap_signal.connect(self.update_screen)
         # self.screen_thread.start()
 
     def initUI(self):
@@ -261,8 +266,17 @@ class BaseMeetingRoom(QWidget):
         self.info_text_edit.setReadOnly(True)
         main_layout.addWidget(self.info_text_edit)
 
-        self.video_label = QLabel(self.video_area)  # 创建用于显示视频的标签
-        video_layout.addWidget(self.video_label)
+        self.video_label_1 = QLabel(self.video_area)  # 创建用于显示视频的标签
+        video_layout.addWidget(self.video_label_1)
+
+        self.video_label_2 = QLabel(self.video_area)  # 创建用于显示视频的标签
+        video_layout.addWidget(self.video_label_2)
+
+        self.video_label_3 = QLabel(self.video_area)  # 创建用于显示视频的标签
+        video_layout.addWidget(self.video_label_3)
+
+        self.screen_label = QLabel(self.video_area)  # 创建用于显示视频的标签
+        video_layout.addWidget(self.screen_label)
 
     def get_window_title(self):
         """Return the window title based on room type."""
@@ -376,8 +390,17 @@ class BaseMeetingRoom(QWidget):
         else:
             return "退出会议"
 
-    def update_video(self, image):
-        self.video_label.setPixmap(QPixmap.fromImage(image))
+    def update_video_1(self, image):
+        self.video_label_1.setPixmap(QPixmap.fromImage(image))
+
+    def update_video_2(self, image):
+        self.video_label_2.setPixmap(QPixmap.fromImage(image))
+
+    def update_video_3(self, image):
+        self.video_label_3.setPixmap(QPixmap.fromImage(image))
+
+    def update_screen(self, image):
+        self.screen_label.setPixmap(QPixmap.fromImage(image))
 
     def onEndMeeting(self):
         if self.room_type == "creator":
@@ -385,8 +408,10 @@ class BaseMeetingRoom(QWidget):
         else:
             self.client.input = "quit"
         # 结束或退出会议逻辑
+        # self.video_conference_app = VideoConferenceApp()
+        # self.video_conference_app.show()
         # self.close()
-        # self.parent().show()  # 如果有父窗口，可以取消注释这行
+        # self.parent().show()  # 如果有父窗口
         # QApplication.quit()
 
     def onMicClick(self):
@@ -424,7 +449,11 @@ class BaseMeetingRoom(QWidget):
         # 预留方法，用于将接收到的信息添加到文本框中
         messages = text.split("\n")
         for message in messages:
-            if not message.startswith("[DEBUG]") and not message.startswith("[INFO]"):
+            if (
+                not message.startswith("[DEBUG]")
+                and not message.startswith("[INFO]")
+                and message.startswith("[")
+            ):
                 self.info_text_edit.append(message)
 
     # 处理输入的内容
