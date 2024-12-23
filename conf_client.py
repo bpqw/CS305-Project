@@ -33,7 +33,9 @@ class ConferenceClient:
         # Video related
         self.cap = None
         self.camera_on = False
-        self.frame = {}
+        self.frame_1 = None
+        self.frame_2 = None
+        self.frame_3 = None
         self.video_task = None
         self.camera_stop_event = asyncio.Event()
 
@@ -44,7 +46,9 @@ class ConferenceClient:
 
         # Screen related
         self.screen_on = False
-        self.screen_frame = {}
+        self.screen_frame_1 = None
+        self.screen_frame_2 = None
+        self.screen_frame_3 = None
         self.screen_task = None
         self.screen_stop_event = asyncio.Event()
 
@@ -528,7 +532,12 @@ class ConferenceClient:
                         frame = cv2.imdecode(frame_np, cv2.IMREAD_COLOR)
 
                         if frame is not None:
-                            self.frame[client_id] = frame
+                            if client_id == 1:
+                                self.frame_1 = frame
+                            elif client_id == 2:
+                                self.frame_2 = frame
+                            elif client_id == 3:
+                                self.frame_3 = frame
                             print(f"[INFO]: Received frame from Client {client_id}")
                         else:
                             print("[Error]: Failed to decode video frame.")
@@ -539,7 +548,7 @@ class ConferenceClient:
                     client_id_packed = message_data[:4]
                     client_id = struct.unpack(">I", client_id_packed)[0]
                     message_data = message_data[4:]
-                    if decompress is not None:
+                    if decompress:
                         try:
                             message_data = decompress(message_data)
                             if not isinstance(message_data, bytes):
@@ -578,7 +587,12 @@ class ConferenceClient:
                         screen_frame = cv2.imdecode(screen_np, cv2.IMREAD_COLOR)
 
                         if screen_frame is not None:
-                            self.screen_frame[client_id] = screen_frame
+                            if client_id == 1:
+                                self.screen_frame_1 = screen_frame
+                            elif client_id == 2:
+                                self.screen_frame_2 = screen_frame
+                            elif client_id == 3:
+                                self.screen_frame_3 = screen_frame
                             print(
                                 f"[INFO]: Received screen frame from Client {client_id}"
                             )

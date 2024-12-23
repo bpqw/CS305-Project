@@ -63,6 +63,13 @@ streamout = audio.open(
     frames_per_buffer=CHUNK,
 )
 
+def compress_audio(data):
+
+    return data
+
+def decompress_audio(compressed_data):
+
+    return compressed_data
 
 def capture_voice():
     try:
