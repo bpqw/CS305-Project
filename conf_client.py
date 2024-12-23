@@ -192,6 +192,9 @@ class ConferenceClient:
         if self.camera_on:
             self.camera_on = False
             self.camera_stop_event.set()
+
+            await self.send_to_meet("close_video")
+
             if self.video_task:
                 self.video_task.cancel()
                 try:
@@ -264,6 +267,8 @@ class ConferenceClient:
         if self.screen_on:
             self.screen_on = False
             self.screen_stop_event.set()
+
+            await self.send_to_meet("close_screen")
             if self.screen_task:
                 self.screen_task.cancel()
                 try:
@@ -510,14 +515,19 @@ class ConferenceClient:
                         client_id = text_message.get("client_id", "Unknown")
                         timestamp = text_message.get("timestamp", "Unknown")
                         message = text_message.get("message", "")
-                        print(f"[{timestamp}] {client_id}: {message}")
-                        await self.message_queue.put(
-                            {
-                                "client_id": client_id,
-                                "timestamp": timestamp,
-                                "message": message,
-                            }
-                        )
+                        if message == "close_video":
+                            cv2.destroyWindow("Video " + str(self.client_id))
+                        elif message == "close_screen":
+                            cv2.destroyWindow("Screen " + str(self.client_id))
+                        else:
+                            print(f"[{timestamp}] {client_id}: {message}")
+                            await self.message_queue.put(
+                                {
+                                    "client_id": client_id,
+                                    "timestamp": timestamp,
+                                    "message": message,
+                                }
+                            )
 
                     except json.JSONDecodeError:
                         print("[Error]: Failed to decode JSON message.")
