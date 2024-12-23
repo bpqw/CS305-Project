@@ -518,13 +518,13 @@ class ConferenceClient:
                         if "close_video" in message:
                             while True:
                                 try:
-                                    cv2.destroyWindow("Video " + str(self.client_id))
+                                    cv2.destroyWindow("Video " + str(client_id))
                                 except cv2.error:
                                     break
                         elif "close_screen" in message:
                             while True:
                                 try:
-                                    cv2.destroyWindow("Screen " + str(self.client_id))
+                                    cv2.destroyWindow("Screen " + str(client_id))
                                 except cv2.error:
                                     break
                         else:

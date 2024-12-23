@@ -118,14 +118,6 @@ class VideoConferenceApp(QWidget):
         main_layout.addWidget(self.welcome_label)
         main_layout.addWidget(self.date_label)
 
-        # 创建图片标签
-        self.image_label = QLabel(self)
-        self.image_label.setPixmap(
-            QPixmap("path_to_your_image.png").scaled(550, 650, Qt.KeepAspectRatio)
-        )
-        self.image_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.image_label)
-
         button_layout = QHBoxLayout()
 
         self.create_meeting_btn = QPushButton("创建会议", self)
