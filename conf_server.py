@@ -58,9 +58,9 @@ class ConferenceServer:
                     data_length = struct.unpack(">I", length_data)[0]
 
                     data = await reader.readexactly(data_length)
-                    print(
-                        f"Received {data_type} data of length {data_length} from client {client_id}."
-                    )
+                    # print(
+                    #     f"Received {data_type} data of length {data_length} from client {client_id}."
+                    # )
 
                     await self.broadcast(data_type, data, writer, is_text=False)
 
@@ -141,7 +141,7 @@ class ConferenceServer:
                 length = struct.pack(">I", len(payload))  # 4 bytes
                 writer.write(data_type.encode("utf-8") + length + payload)
                 await writer.drain()
-            print(f"Broadcasted {data_type} data to a client.")
+            # print(f"Broadcasted {data_type} data to a client.")
         except Exception as e:
             print(f"Error broadcasting {data_type} data: {e}")
 

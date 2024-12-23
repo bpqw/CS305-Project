@@ -1,9 +1,9 @@
 import io
 import sys
 import asyncio
+import time
+
 from conf_client import ConferenceClient
-from video_thread import VideoThread
-from screen_thread import ScreenThread
 
 from PyQt5.QtCore import pyqtSignal, QThread, Qt, QDateTime
 from PyQt5.QtGui import QPixmap, QImage
@@ -15,7 +15,6 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QFrame,
     QLabel,
-    QListWidget,
     QMessageBox,
     QLineEdit,
     QTextEdit,
@@ -33,11 +32,19 @@ class ClientThread(QThread):
 
     def run(self):
         # 在新线程中运行异步客户端
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        asyncio.get_event_loop().run_until_complete(self.client.start())
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self.client.start())
+
+    def stop(self):
+        self.running = False  # 设置标志以停止线程
+        if self.loop.is_running():
+            self.loop.stop()  # 停止事件循环
+        self.wait()
+
+    # 用于控制台输出获取
 
 
-# 用于控制台输出获取
 class ConsoleOutputCapture:
     def __init__(self):
         self.original_stdout = sys.stdout
@@ -85,10 +92,102 @@ class VideoConferenceApp(QWidget):
         super().__init__()
         self.initUI()
         self.client = ConferenceClient()
-        # self.client.message_received.connect(MeetingRoom1.appendText)
-        # self.client.message_received.connect(self.appendText)
         self.client_thread = ClientThread(self.client)
         self.client_thread.start()
+
+    def initUI(self):
+        self.setWindowTitle("视频会议系统")
+        self.setGeometry(600, 150, 700, 700)  # Left, Top, Height, Width
+        self.setStyleSheet("background-color: #f0f0f0; font-family: Arial, sans-serif;")
+
+        self.welcome_label = QLabel("欢迎使用本会议软件，请选择你需要的服务", self)
+        self.welcome_label.setAlignment(Qt.AlignCenter)
+        self.welcome_label.setStyleSheet(
+            "font-size: 32px; color: #333333; margin-bottom: 20px;"
+        )
+
+        # 创建日期标签
+        self.date_label = QLabel(self)
+        self.update_date()
+        self.date_label.setAlignment(Qt.AlignCenter)
+        self.date_label.setStyleSheet(
+            "font-size: 24px; color: blue; font-weight: bold; margin-bottom: 40px;"
+        )
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.welcome_label)
+        main_layout.addWidget(self.date_label)
+
+        # 创建图片标签
+        self.image_label = QLabel(self)
+        self.image_label.setPixmap(
+            QPixmap("path_to_your_image.png").scaled(550, 650, Qt.KeepAspectRatio)
+        )
+        self.image_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(self.image_label)
+
+        button_layout = QHBoxLayout()
+
+        self.create_meeting_btn = QPushButton("创建会议", self)
+        self.create_meeting_btn.setStyleSheet(self.button_style())
+        self.create_meeting_btn.clicked.connect(self.onCreateMeeting)
+        button_layout.addWidget(self.create_meeting_btn)
+
+        self.join_meeting_btn = QPushButton("加入会议", self)
+        self.join_meeting_btn.setStyleSheet(self.button_style())
+        self.join_meeting_btn.clicked.connect(self.onJoinMeeting)
+        button_layout.addWidget(self.join_meeting_btn)
+
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+
+    def button_style(self):
+        return """
+            QPushButton {
+                background-color: #007BFF;
+                color: white;
+                border-radius: 10px;
+                font-size: 20px;
+                padding: 15px;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            QPushButton:pressed {
+                background-color: #003d80;
+            }
+        """
+
+    def onCreateMeeting(self):
+        self.client.input = "create"
+        # 创建视频会议窗口
+        self.create_meeting = MeetingRoom1(self.client)
+        self.create_meeting.show()
+        self.hide()
+
+    def onJoinMeeting(self):
+        # 创建加入会议列表窗口
+        self.join_meeting_list = JoinMeetingList(
+            self.client
+        )  # 传递 self.client 给 JoinMeetingList
+        self.join_meeting_list.show()
+        self.hide()
+
+    def update_date(self):
+        current_date = QDateTime.currentDateTime().toString("yyyy 年 MM 月 dd 日")
+        self.date_label.setText(current_date)
+
+
+class VideoConferenceApp2(QWidget):
+    def __init__(self, client):
+        super().__init__()
+        self.initUI()
+        # self.client = ConferenceClient()
+        self.client = client
+        # self.client_thread = ClientThread(self.client)
+        # self.client_thread.start()
 
     def initUI(self):
         self.setWindowTitle("视频会议系统")
@@ -205,7 +304,6 @@ class CreateMeetingDialog(QWidget):
         if meeting_name:  # 检查是否输入了会议名称
 
             # 填写对名称传输的逻辑
-
             self.meeting_room = MeetingRoom1()
             self.meeting_room.show()
             self.close()  # 关闭窗口
@@ -217,7 +315,6 @@ class BaseMeetingRoom(QWidget):
     def __init__(self, client, room_type):
         super().__init__()
         self.client = client
-        self.client.client_id = client.client_id
         self.current_id = 0
         self.room_type = room_type
         self.initUI()
@@ -225,16 +322,6 @@ class BaseMeetingRoom(QWidget):
         self.console_thread = ConsoleMonitorThread(self.console_capture)  # 创建监控线程
         self.console_thread.console_output.connect(self.appendText)  # 连接信号
         self.console_thread.start()  # 启动线程
-
-        # self.video_thread = VideoThread(self.client)  # 使用 client 作为 frame_provider
-        # self.video_thread.change_pixmap_signal_1.connect(self.update_video_1)
-        # self.video_thread.change_pixmap_signal_2.connect(self.update_video_2)
-        # self.video_thread.change_pixmap_signal_3.connect(self.update_video_3)
-        # self.video_thread.start()
-
-        # self.screen_thread = ScreenThread(self.client)
-        # self.screen_thread.change_pixmap_signal.connect(self.update_screen)
-        # self.screen_thread.start()
 
     def initUI(self):
         self.setWindowTitle(self.get_window_title())
@@ -281,7 +368,7 @@ class BaseMeetingRoom(QWidget):
     def get_window_title(self):
         """Return the window title based on room type."""
         if self.room_type == "creator":
-            return "用户" + self.client.client_id + "的视频会议房间 (房主)"
+            return "用户" + self.client.client_id + "的视频会议房间(房主)"
         else:
             return "用户" + self.client.client_id + "的视频会议房间（成员）"
 
@@ -390,26 +477,16 @@ class BaseMeetingRoom(QWidget):
         else:
             return "退出会议"
 
-    def update_video_1(self, image):
-        self.video_label_1.setPixmap(QPixmap.fromImage(image))
-
-    def update_video_2(self, image):
-        self.video_label_2.setPixmap(QPixmap.fromImage(image))
-
-    def update_video_3(self, image):
-        self.video_label_3.setPixmap(QPixmap.fromImage(image))
-
-    def update_screen(self, image):
-        self.screen_label.setPixmap(QPixmap.fromImage(image))
-
     def onEndMeeting(self):
         if self.room_type == "creator":
             self.client.input = "cancel"
         else:
             self.client.input = "quit"
+
+        self.hide()
         # 结束或退出会议逻辑
-        # self.video_conference_app = VideoConferenceApp()
-        # self.video_conference_app.show()
+        self.video_conference_app = VideoConferenceApp2(self.client)
+        self.video_conference_app.show()
         # self.close()
         # self.parent().show()  # 如果有父窗口
         # QApplication.quit()
@@ -452,7 +529,7 @@ class BaseMeetingRoom(QWidget):
             if (
                 not message.startswith("[DEBUG]")
                 and not message.startswith("[INFO]")
-                # and message.startswith("[")
+                and message.startswith("[")
             ):
                 self.info_text_edit.append(message)
 
@@ -497,6 +574,12 @@ class JoinMeetingList(QWidget):
         self.meeting_name_edit.setStyleSheet(self.input_style())
         layout.addWidget(self.meeting_name_edit)
 
+        # View meeting list button
+        self.view_list_btn = QPushButton("查看会议列表", self)
+        self.view_list_btn.setStyleSheet(self.button_style())
+        self.view_list_btn.clicked.connect(self.onViewList)  # 连接点击事件
+        layout.addWidget(self.view_list_btn)
+
         # Complete button
         finish_btn = QPushButton("完成", self)
         finish_btn.setStyleSheet(self.button_style())
@@ -538,6 +621,11 @@ class JoinMeetingList(QWidget):
                 background-color: #003d80;
             }
         """
+
+    def onViewList(self):
+        self.client.input = "list"
+        time.sleep(1)
+        QMessageBox.information(self, "会议列表", self.client.list)
 
     def onFinish(self):
         meeting_name = self.meeting_name_edit.text()

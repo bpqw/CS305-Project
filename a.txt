@@ -1,6 +1,0 @@
-1. select input/output devices/ screen tab
-
-1. exclude own audio (exclude id)
-2. close mic
-3. multiple client see videos
-4. video + mic simultaneosly

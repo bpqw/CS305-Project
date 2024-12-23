@@ -26,6 +26,7 @@ class ConferenceClient:
 
         # Input related
         self.input = None
+        self.list = None
 
         # Message related
         self.message_queue = asyncio.Queue()
@@ -180,11 +181,11 @@ class ConferenceClient:
                     send_conn=self.meet_writer,
                     capture_function=self.capture_frame,
                     compress=compress_image,
-                    fps_or_frequency=30,
+                    fps_or_frequency=24,
                     stop_event=self.camera_stop_event,
                 )
             )
-            print("[INFO]: Video sharing started.")
+            # print("[INFO]: Video sharing started.")
 
     async def stop_video_share(self):
         """Stop sharing video by stopping the keep_share coroutine and releasing resources."""
@@ -223,7 +224,7 @@ class ConferenceClient:
                     stop_event=self.audio_stop_event,
                 )
             )
-            print("[INFO]: Audio sharing started.")
+            # print("[INFO]: Audio sharing started.")
 
     async def stop_audio_share(self):
         """Stop sharing audio by stopping the keep_share coroutine."""
@@ -252,11 +253,11 @@ class ConferenceClient:
                     send_conn=self.meet_writer,
                     capture_function=capture_screen,
                     compress=compress_image,
-                    fps_or_frequency=30,
+                    fps_or_frequency=15,
                     stop_event=self.screen_stop_event,
                 )
             )
-            print("[INFO]: Screen sharing started.")
+            # print("[INFO]: Screen sharing started.")
 
     async def stop_screen_share(self):
         """Stop sharing screen by stopping the keep_share coroutine."""
@@ -454,6 +455,7 @@ class ConferenceClient:
                     print("Please choose another conference")
                 elif "List: " in data.decode():
                     conference = data.decode().split("List: ")[1].strip()
+                    self.list = conference
                     await self.list_conference(conference)
                 elif "You will quit the conference" in data.decode():
                     await self.quit_conference()
@@ -576,6 +578,7 @@ class ConferenceClient:
                     client_id_packed = message_data[:4]
                     client_id = struct.unpack(">I", client_id_packed)[0]
                     message_data = message_data[4:]
+                    decompress = None
                     if decompress:
                         try:
                             message_data = decompress(message_data)
