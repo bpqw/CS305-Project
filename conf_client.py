@@ -40,6 +40,9 @@ class ConferenceClient:
         self.frame_4 = None
         self.frame_5 = None
         self.frame_6 = None
+        self.frame_7 = None
+        self.frame_8 = None
+        self.frame_9 = None
 
         self.video_task = None
         self.camera_stop_event = asyncio.Event()
@@ -58,6 +61,9 @@ class ConferenceClient:
         self.screen_frame_4 = None
         self.screen_frame_5 = None
         self.screen_frame_6 = None
+        self.screen_frame_7 = None
+        self.screen_frame_8 = None
+        self.screen_frame_9 = None
 
         self.screen_task = None
         self.screen_stop_event = asyncio.Event()
@@ -577,6 +583,15 @@ class ConferenceClient:
                             elif client_id == 6:
                                 self.frame_6 = frame
                                 cv2.imshow("Video 6", self.frame_6)
+                            elif client_id == 7:
+                                self.frame_7 = frame
+                                cv2.imshow("Video 7", self.frame_7)
+                            elif client_id == 8:
+                                self.frame_8 = frame
+                                cv2.imshow("Video 8", self.frame_8)
+                            elif client_id == 9:
+                                self.frame_9 = frame
+                                cv2.imshow("Video 9", self.frame_9)
 
                             key = cv2.waitKey(1)  # 1ms delay for window update
                             if key == ord("q"):  # Press 'q' to close the window
@@ -648,6 +663,15 @@ class ConferenceClient:
                             elif client_id == 6:
                                 self.screen_frame_6 = screen_frame
                                 cv2.imshow("Screen 6", self.screen_frame_6)
+                            elif client_id == 7:
+                                self.screen_frame_7 = screen_frame
+                                cv2.imshow("Screen 7", self.screen_frame_7)
+                            elif client_id == 8:
+                                self.screen_frame_8 = screen_frame
+                                cv2.imshow("Screen 8", self.screen_frame_8)
+                            elif client_id == 9:
+                                self.screen_frame_9 = screen_frame
+                                cv2.imshow("Screen 9", self.screen_frame_9)
 
                             key = cv2.waitKey(1)  # 1ms delay for window update
                             if key == ord("q"):  # Press 'q' to close the window

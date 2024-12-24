@@ -552,7 +552,7 @@ class BaseMeetingRoom(QWidget):
             if (
                 not message.startswith("[DEBUG]")
                 and not message.startswith("[INFO]")
-                # and message.startswith("[")
+                and message.startswith("[")
             ):
                 self.info_text_edit.append(message)
 
