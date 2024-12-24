@@ -7,7 +7,6 @@ from conf_client import ConferenceClient
 
 from PyQt5.QtCore import pyqtSignal, QThread, Qt, QDateTime, QUrl
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -204,14 +203,6 @@ class VideoConferenceApp2(QWidget):
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.welcome_label)
         main_layout.addWidget(self.date_label)
-
-        # 创建图片标签
-        self.image_label = QLabel(self)
-        self.image_label.setPixmap(
-            QPixmap("path_to_your_image.png").scaled(550, 650, Qt.KeepAspectRatio)
-        )
-        self.image_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.image_label)
 
         button_layout = QHBoxLayout()
 
