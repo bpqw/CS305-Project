@@ -5,8 +5,9 @@ import time
 
 from conf_client import ConferenceClient
 
-from PyQt5.QtCore import pyqtSignal, QThread, Qt, QDateTime
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import pyqtSignal, QThread, Qt, QDateTime, QUrl
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -307,6 +308,7 @@ class BaseMeetingRoom(QWidget):
     def __init__(self, client, room_type):
         super().__init__()
         self.client = client
+        self.noise_supp = self.client.noise_supp
         self.current_id = 0
         self.room_type = room_type
         self.initUI()
@@ -314,6 +316,13 @@ class BaseMeetingRoom(QWidget):
         self.console_thread = ConsoleMonitorThread(self.console_capture)  # 创建监控线程
         self.console_thread.console_output.connect(self.appendText)  # 连接信号
         self.console_thread.start()  # 启动线程
+
+        self.player_on = QMediaPlayer()
+        self.player_off = QMediaPlayer()
+        self.sound_on = QMediaContent(QUrl.fromLocalFile("media/on_sound.mp3"))
+        self.sound_off = QMediaContent(QUrl.fromLocalFile("media/off_sound.mp3"))
+        self.player_on.setMedia(self.sound_on)
+        self.player_off.setMedia(self.sound_off)
 
     def initUI(self):
         self.setWindowTitle(self.get_window_title())
@@ -394,6 +403,11 @@ class BaseMeetingRoom(QWidget):
         self.mic_btn = QPushButton("开启麦克风")
         self.mic_btn.clicked.connect(self.onMicClick)
         bottom_layout.addWidget(self.mic_btn)
+
+        # 噪音抑制按钮
+        self.noise_supp_btn = QPushButton("降噪吗?")
+        self.noise_supp_btn.clicked.connect(self.toggle_noise_supp)
+        bottom_layout.addWidget(self.noise_supp_btn)
 
         # 摄像头按钮
         self.cam_btn = QPushButton("开启摄像头")
@@ -483,33 +497,50 @@ class BaseMeetingRoom(QWidget):
         # self.parent().show()  # 如果有父窗口
         # QApplication.quit()
 
+    def toggle_noise_supp(self):
+        """Toggle noise suppression state and update button text."""
+        self.noise_supp = not self.noise_supp
+        if self.noise_supp:
+            self.player_on.play()
+            self.noise_supp_btn.setText("停止降噪")
+        else:
+            self.player_off.play()
+            self.noise_supp_btn.setText("降噪吗?")
+        print(f"Noise Suppression {'Enabled' if self.noise_supp else 'Disabled'}")
+
     def onMicClick(self):
         # 开启麦克风逻辑
         if self.mic_btn.text() == "开启麦克风":
+            self.player_on.play()
             print("开启麦克风按钮被点击")
             self.client.input = "audio on"
             self.mic_btn.setText("关闭麦克风")
         else:
+            self.player_off.play()
             print("关闭麦克风按钮被点击")
             self.client.input = "audio off"
             self.mic_btn.setText("开启麦克风")
 
     def onCamClick(self):
         if self.cam_btn.text() == "开启摄像头":
+            self.player_on.play()
             print("开启摄像头按钮被点击")
             self.client.input = "camera on"
             self.cam_btn.setText("关闭摄像头")
         else:
+            self.player_off.play()
             print("关闭摄像头按钮被点击")
             self.client.input = "camera off"
             self.cam_btn.setText("开启摄像头")
 
     def onScreenClick(self):
         if self.screen_btn.text() == "共享屏幕":
+            self.player_on.play()
             print("共享屏幕按钮被点击")
             self.client.input = "screen on"
             self.screen_btn.setText("停止共享")
         else:
+            self.player_off.play()
             print("停止共享按钮被点击")
             self.client.input = "screen off"
             self.screen_btn.setText("共享屏幕")
@@ -521,7 +552,7 @@ class BaseMeetingRoom(QWidget):
             if (
                 not message.startswith("[DEBUG]")
                 and not message.startswith("[INFO]")
-                and message.startswith("[")
+                # and message.startswith("[")
             ):
                 self.info_text_edit.append(message)
 

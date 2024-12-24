@@ -9,6 +9,7 @@ import pyaudio
 import cv2
 import pyautogui
 import numpy as np
+import noisereduce as nr
 from PIL import Image, ImageGrab
 from config import *
 
@@ -39,8 +40,6 @@ def decompress_image(compressed_data):
 
 
 # audio setting
-FORMAT = pyaudio.paInt16
-audio = pyaudio.PyAudio()
 # print("Default input device:", audio.get_default_input_device_info(), "\n")
 # print("Default output device:", audio.get_default_output_device_info(), "\n")
 # for i in range(audio.get_device_count()):
@@ -52,6 +51,7 @@ audio = pyaudio.PyAudio()
 #             info.get("maxInputChannels"),
 #             info.get("maxOutputChannels"),
 #         )
+audio = pyaudio.PyAudio()
 streamin = audio.open(
     format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
 )
@@ -63,13 +63,6 @@ streamout = audio.open(
     frames_per_buffer=CHUNK,
 )
 
-def compress_audio(data):
-
-    return data
-
-def decompress_audio(compressed_data):
-
-    return compressed_data
 
 def capture_voice():
     try:
@@ -107,6 +100,26 @@ def stop_voice():
     print("Voice capture stopped and resources released.")
 
 
+def compress_audio(data):
+
+    return data
+
+
+def decompress_audio(compressed_data):
+
+    return compressed_data
+
+
+def apply_noise_suppression(audio_data):
+    """Apply noise suppression using the noisereduce package."""
+    audio_np = np.frombuffer(audio_data, dtype=np.int16)
+    audio_np = audio_np / 32768.0
+    reduced_audio_np = nr.reduce_noise(y=audio_np, sr=RATE)
+    reduced_audio_np = np.clip(reduced_audio_np, -1.0, 1.0)
+    audio_data = (reduced_audio_np * 32768).astype(np.int16).tobytes()
+    return audio_data
+
+
 def capture_screen():
     """
     Capture the entire screen and return it as a NumPy array suitable for OpenCV.
@@ -125,84 +138,3 @@ def capture_screen():
 
 
 my_screen_size = pyautogui.size()
-
-
-def resize_image_to_fit_screen(image, my_screen_size):
-    screen_width, screen_height = my_screen_size
-
-    original_width, original_height = image.size
-
-    aspect_ratio = original_width / original_height
-
-    if screen_width / screen_height > aspect_ratio:
-        # resize according to height
-        new_height = screen_height
-        new_width = int(new_height * aspect_ratio)
-    else:
-        # resize according to width
-        new_width = screen_width
-        new_height = int(new_width / aspect_ratio)
-
-    # resize the image
-    resized_image = image.resize((new_width, new_height), Image.LANCZOS)
-
-    return resized_image
-
-
-def overlay_camera_images(screen_image, camera_images):
-    """
-    screen_image: PIL.Image
-    camera_images: list[PIL.Image]
-    """
-    if screen_image is None and camera_images is None:
-        print("[Warn]: cannot display when screen and camera are both None")
-        return None
-    if screen_image is not None:
-        screen_image = resize_image_to_fit_screen(screen_image, my_screen_size)
-
-    if camera_images is not None:
-        # make sure same camera images
-        if not all(img.size == camera_images[0].size for img in camera_images):
-            raise ValueError("All camera images must have the same size")
-
-        screen_width, screen_height = (
-            my_screen_size if screen_image is None else screen_image.size
-        )
-        camera_width, camera_height = camera_images[0].size
-
-        # calculate num_cameras_per_row
-        num_cameras_per_row = screen_width // camera_width
-
-        # adjust camera_imgs
-        if len(camera_images) > num_cameras_per_row:
-            adjusted_camera_width = screen_width // len(camera_images)
-            adjusted_camera_height = (
-                adjusted_camera_width * camera_height
-            ) // camera_width
-            camera_images = [
-                img.resize(
-                    (adjusted_camera_width, adjusted_camera_height), Image.LANCZOS
-                )
-                for img in camera_images
-            ]
-            camera_width, camera_height = adjusted_camera_width, adjusted_camera_height
-            num_cameras_per_row = len(camera_images)
-
-        # if no screen_img, create a container
-        if screen_image is None:
-            display_image = Image.fromarray(
-                np.zeros((camera_width, my_screen_size[1], 3), dtype=np.uint8)
-            )
-        else:
-            display_image = screen_image
-        # cover screen_img using camera_images
-        for i, camera_image in enumerate(camera_images):
-            row = i // num_cameras_per_row
-            col = i % num_cameras_per_row
-            x = col * camera_width
-            y = row * camera_height
-            display_image.paste(camera_image, (x, y))
-
-        return display_image
-    else:
-        return screen_image

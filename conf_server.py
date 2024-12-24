@@ -96,25 +96,6 @@ class ConferenceServer:
         await self.send_framed_message(writer, "T", message_dict)
 
         asyncio.create_task(self.handle_data(reader, writer, user_id))
-        # while True:
-        #     try:
-        #         type_data = await reader.readexactly(1)
-        #         if not type_data:
-        #             print(f"disconnect with {user_id}")
-        #             self.clients_info.pop(user_id)
-        #             self.clients_conns.pop(user_id)
-        #             return
-        #         data_type = type_data.decode("utf-8")
-        #         print(f"Received data type: {data_type} from client {user_id}")
-        #         await self.handle_data(reader, writer, data_type, user_id)
-        #     except asyncio.IncompleteReadError:
-        #         print(f"Client {user_id} disconnected.")
-        #         self.clients_conns.pop(user_id, None)
-        #         self.clients_info.pop(user_id, None)
-        #         break
-        #     except Exception as e:
-        #         print(f"Error with client {user_id}: {e}")
-        #         break
 
     async def broadcast(self, data_type, payload, sender_writer, is_text=False):
         """

@@ -48,6 +48,7 @@ class ConferenceClient:
         self.audio_on = False
         self.audio_task = None
         self.audio_stop_event = asyncio.Event()
+        self.noise_supp = False
 
         # Screen related
         self.screen_on = False
@@ -298,12 +299,14 @@ class ConferenceClient:
             if data_type == "video":
                 while not stop_event.is_set():
                     print("[INFO]: Capturing video frame")
-                    frame = capture_function()
+                    frame = await asyncio.to_thread(capture_function)
                     if frame is None:
                         print("[Info]: No frame captured. Stopping video share.")
                         break
 
-                    success, encoded_image = cv2.imencode(".jpg", frame)
+                    success, encoded_image = await asyncio.to_thread(
+                        cv2.imencode, ".jpg", frame
+                    )
                     if not success:
                         print("[Error]: Failed to encode frame.")
                         await asyncio.sleep(1 / fps_or_frequency)
@@ -313,7 +316,7 @@ class ConferenceClient:
 
                     if compress:
                         try:
-                            frame_bytes = compress(frame_bytes)
+                            frame_bytes = await asyncio.to_thread(compress, frame_bytes)
                             if not isinstance(frame_bytes, bytes):
                                 print(
                                     "[Error]: Compression function must return bytes."
@@ -338,25 +341,13 @@ class ConferenceClient:
 
             elif data_type == "audio":
                 while not stop_event.is_set():
-                    audio_data = capture_function()
+                    audio_data = await asyncio.to_thread(capture_function)
                     if audio_data is None:
                         print("[Info]: No audio captured. Stopping audio share.")
                         break
 
-                    # Optional compression
-                    if compress:
-                        try:
-                            audio_data = compress(audio_data)
-                            if not isinstance(audio_data, bytes):
-                                print(
-                                    "[Error]: Compression function must return bytes."
-                                )
-                                await asyncio.sleep(1 / fps_or_frequency)
-                                continue
-                        except Exception as e:
-                            print(f"[Error]: Compression failed: {e}")
-                            await asyncio.sleep(1 / fps_or_frequency)
-                            continue
+                    if self.noise_supp:
+                        audio_data = apply_noise_suppression(audio_data)
 
                     data_type_byte = b"A"
                     client_id_packed = struct.pack(">I", int(self.client_id))
@@ -372,12 +363,14 @@ class ConferenceClient:
             elif data_type == "screen":
                 while not stop_event.is_set():
                     print("[INFO]: Capturing screen")
-                    screen = capture_function()
+                    screen = await asyncio.to_thread(capture_function)
                     if screen is None:
                         print("[Info]: No screen captured. Stopping screen share.")
                         break
 
-                    success, encoded_image = cv2.imencode(".jpg", screen)
+                    success, encoded_image = await asyncio.to_thread(
+                        cv2.imencode, ".jpg", screen
+                    )
                     if not success:
                         print("[Error]: Failed to encode screen.")
                         await asyncio.sleep(1 / fps_or_frequency)
@@ -387,7 +380,9 @@ class ConferenceClient:
 
                     if compress:
                         try:
-                            screen_bytes = compress(screen_bytes)
+                            screen_bytes = await asyncio.to_thread(
+                                compress, screen_bytes
+                            )
                             if not isinstance(screen_bytes, bytes):
                                 print(
                                     "[Error]: Compression function must return bytes."
@@ -609,7 +604,6 @@ class ConferenceClient:
                             print(f"[Error]: Decompression failed: {e}")
                             continue
                     try:
-                        # print(f"Received audio length: {len(message_data)}")
                         streamout.write(message_data)
                     except Exception as e:
                         print(f"[Error]: Exception while playing audio: {e}")
