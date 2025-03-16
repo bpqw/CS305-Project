@@ -4,7 +4,6 @@ import asyncio
 import time
 
 from conf_client import ConferenceClient
-
 from PyQt5.QtCore import pyqtSignal, QThread, Qt, QDateTime, QUrl
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import (
@@ -176,10 +175,7 @@ class VideoConferenceApp2(QWidget):
     def __init__(self, client):
         super().__init__()
         self.initUI()
-        # self.client = ConferenceClient()
         self.client = client
-        # self.client_thread = ClientThread(self.client)
-        # self.client_thread.start()
 
     def initUI(self):
         self.setWindowTitle("视频会议系统")
