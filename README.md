@@ -81,6 +81,6 @@ Below are some screenshots of the project in action:
 | Name          | Contribution                       |
 | ------------- | ---------------------------------- |
 | Tan Hao Yang  | Text, Audio and Video Transmission |
-| JianHao Zhang | Text, Audio and Video Transmission |
-| YiFan Liu     | User Interface                     |
-| MingYu Zhu    | Meeting Rooms Operations           |
+| Jianhao Zhang | Text, Audio and Video Transmission |
+| Yifan Liu     | User Interface                     |
+| Mingyu Zhu    | Meeting Rooms Operations           |
