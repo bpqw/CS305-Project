@@ -72,9 +72,7 @@ Now, try creating a meeting room and test out the camera, mic, chat, and other f
 
 Below are some screenshots of the project in action:
 
-```markdown
 ![Meeting Room Interface](media/screenshot.png)
-```
 
 ## Members and Contributions
 
